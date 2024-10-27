@@ -22,3 +22,15 @@ Plug 'suguruwataru/nvim-rimecmd'
 ```
 
 用别的插件管理插件应当也没问题，不过我没试过。
+
+## 使用
+
+这个插件提供了一个命令：`Rimecmd`。
+
+使用这个命令可以进入一个“Rimecmd状态”。在这个状态下进入插入模式，这个插件就会通过一个窗口来让用户使用输入法。
+
+在这个状态下再度使用`Rimecmd`就能解除这个状态。
+
+在Neovim中使用`:h nvim-rimecmd`可以看到更多。
+
+这个插件提供了中文文档。可以在`set helplang=zh`之后`:h nvim-rimecmd`查看。

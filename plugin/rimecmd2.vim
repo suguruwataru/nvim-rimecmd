@@ -198,10 +198,25 @@ function! s:rimecmd_mode.Enter() abort dict
 
   augroup rimecmd_mode
     autocmd ModeChanged t:nt call s:rimecmd_mode.OnModeChangedN()
+    autocmd ModeChanged *:i call s:rimecmd_mode.OnModeChangedI()
+    autocmd QuitPre * call s:rimecmd_mode.OnQuitPre()
   augroup END
 endfunction
 
-function! s:rimecmd_mode.OnModeChangedN() abort
+function! s:rimecmd_mode.OnModeChangedI() abort dict
+  if nvim_get_current_win() == self.members.text_win
+    call self.ShowWindow()
+  endif
+endfunction
+
+function! s:rimecmd_mode.OnQuitPre() abort dict
+  if exists('self.members.rimecmd_win') &&
+  \ nvim_get_current_win() == self.members.rimecmd_win
+    call self.Exit()
+  endif
+endfunction
+
+function! s:rimecmd_mode.OnModeChangedN() abort dict
   if nvim_get_current_win() == self.members.rimecmd_win
     call nvim_set_current_win(self.members.text_win)
     call self.HideWindow()
@@ -213,6 +228,8 @@ function! s:rimecmd_mode.ShowWindow() abort dict
     return
   endif
   call self.OpenWindow()
+  call self.ReconfigureWindow()
+  call self.DrawCursorExtmark()
 endfunction
 
 function! s:rimecmd_mode.HideWindow() abort dict
@@ -228,6 +245,9 @@ function! s:rimecmd_mode.HideWindow() abort dict
 endfunction
 
 function! s:rimecmd_mode.Exit() abort dict
+  augroup rimecmd_mode
+    autocmd!
+  augroup END
   call nvim_set_current_win(self.members.text_win)
   if exists('self.members.rimecmd_job_id')
     call jobstop(self.members.rimecmd_job_id)
@@ -245,5 +265,3 @@ function! s:rimecmd_mode.Exit() abort dict
 endfunction
 
 command! Rimecmd call s:rimecmd_mode.Toggle()
-command! RimecmdHide call s:rimecmd_mode.HideWindow()
-command! RimecmdShow call s:rimecmd_mode.ShowWindow()

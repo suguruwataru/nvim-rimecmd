@@ -114,6 +114,7 @@ function! s:rimecmd_mode.SetupTerm() abort dict
   " to stdout. As a result, redirection is used to separate actual stdout
   " from terminal control output.
   let stdout_fifo = tempname()
+  let stdin_fifo = tempname()
 
   function! s:SetupTermOnStdout(_job_id, data, _event) abort closure
     " Neovim triggers on_stdout callback with a list of an empty string
@@ -121,7 +122,11 @@ function! s:rimecmd_mode.SetupTerm() abort dict
     if a:data[0] == ''
       return
     endif
-    let commit_string = a:data[0]
+    let decoded_json = json_decode(a:data[0])
+    if !exists("decoded_json.outcome.effect.commit_string")
+      return
+    endif
+    let commit_string = decoded_json.outcome.effect.commit_string
     let text_cursor = nvim_win_get_cursor(self.members.text_win)
     let row = text_cursor[0] - 1
     let col = text_cursor[1]
@@ -146,7 +151,11 @@ function! s:rimecmd_mode.SetupTerm() abort dict
   function! s:OnMkfifoStdoutFifoExit(_job_id, exit_code, _event) abort closure
     call nvim_set_current_win(self.members.rimecmd_win)
     let self.members.rimecmd_job_id = termopen(
-      \ ["sh", "-c", printf("rimecmd --continue > %s", stdout_fifo)],
+      \ ["sh", "-c", printf(
+        \ "cat %s | rimecmd --tty --json --continue > %s",
+        \ stdin_fifo,
+        \ stdout_fifo,
+      \ )],
     \ )
     if self.members.rimecmd_job_id == -1
       throw "cannot execute rimecmd"
@@ -164,7 +173,11 @@ function! s:rimecmd_mode.SetupTerm() abort dict
     startinsert
   endfunction
 
-  call jobstart(["mkfifo", stdout_fifo], {
+  call jobstart(["sh", "-c", printf(
+      \ "mkfifo %s && mkfifo %s",
+      \ stdout_fifo,
+      \ stdin_fifo,
+    \ )], {
     \ "on_exit": function('s:OnMkfifoStdoutFifoExit'),
   \ })
 endfunction

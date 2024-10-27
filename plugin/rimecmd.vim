@@ -1,5 +1,6 @@
 let s:extmark_ns = nvim_create_namespace('rimecmd')
 let s:rimecmd = #{ active: v:false }
+let s:rimecmd_mode = #{ active: v:false }
 
 function! s:rimecmd.OnModeChangedI() abort dict
   call nvim_feedkeys("\<ESC>", 'n', v:true)
@@ -16,24 +17,25 @@ function! s:rimecmd.OnModeChangedN() abort dict
   endif
 endfunction
 
-function! s:rimecmd.RimecmdEnable() abort dict
-  function! OnModeChangedI() abort closure
-    call self.OnModeChangedI()
-  endfunction
-  function! OnModeChangedN() abort closure
-    call self.OnModeChangedN()
-  endfunction
-  augroup rimecmd_mode
-    autocmd!
-    autocmd ModeChanged *:i call OnModeChangedI()
-    autocmd ModeChanged t:nt call OnModeChangedN()
-  augroup END
-endfunction
-
-function! s:rimecmd.RimecmdDisable() abort dict
-  augroup rimecmd_mode
-    autocmd!
-  augroup END
+function! s:rimecmd.ToggleRimecmdMode() abort dict
+  if !s:rimecmd_mode.active
+    let s:rimecmd_mode.active = v:true
+    function! OnModeChangedI() abort closure
+      call self.OnModeChangedI()
+    endfunction
+    augroup rimecmd_mode
+      autocmd!
+      autocmd ModeChanged *:i call OnModeChangedI()
+    augroup END
+  else
+    if self.active
+      call self.Stop()
+    endif
+    augroup rimecmd_mode
+      autocmd!
+    augroup END
+    let s:rimecmd_mode.active = v:false
+  endif
 endfunction
 
 function! s:rimecmd.OnCursorMoved() abort dict
@@ -132,11 +134,15 @@ function! s:rimecmd.Enter(oneshot, append) abort dict
       call self.Stop()
     endif
   endfunction
+  function! OnModeChangedN() abort closure
+    call self.OnModeChangedN()
+  endfunction
   augroup rimecmd
     autocmd WinEnter * call OnWinEnter()
     autocmd CursorMoved * call OnCursorMoved()
     autocmd CursorMovedI * call OnCursorMovedI()
     autocmd QuitPre * call OnQuitPre()
+    autocmd ModeChanged t:nt call OnModeChangedN()
   augroup END
   call nvim_feedkeys("i", 'n', v:true)
 endfunction
@@ -302,10 +308,9 @@ function! s:rimecmd.Stop() abort dict
   call jobwait(jobs)
 endfunction
 
-command! Rimecmd call s:rimecmd.Enter(v:false, v:false)
+command! RimecmdInsert call s:rimecmd.Enter(v:false, v:false)
 command! RimecmdAppend call s:rimecmd.Enter(v:false, v:true)
 command! RimecmdOneshot call s:rimecmd.Enter(v:true, v:false)
 command! RimecmdOneshotAppend call s:rimecmd.Enter(v:true, v:true)
 command! RimecmdStop call s:rimecmd.Stop()
-command! RimecmdEnable call s:rimecmd.RimecmdEnable()
-command! RimecmdDisable call s:rimecmd.RimecmdDisable()
+command! Rimecmd call s:rimecmd.ToggleRimecmdMode()

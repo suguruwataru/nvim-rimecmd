@@ -1,6 +1,6 @@
-function! Oneshot() abort
-  let current_buf = nvim_win_get_buf(0)
-  let current_cursor = nvim_win_get_cursor(0)
+function! Oneshot(append) abort
+  let text_win = nvim_get_current_win()
+  let current_cursor = nvim_win_get_cursor(text_win)
   let rimecmd_buf = nvim_create_buf(v:false, v:true)
   let rimecmd_window = nvim_open_win(
     \ rimecmd_buf, v:true, {
@@ -8,7 +8,7 @@ function! Oneshot() abort
       \ 'row': 1,
       \ 'col': 0,
       \ 'height': 10,
-      \ 'width': 20,
+      \ 'width': 40,
       \ 'focusable': v:true,
       \ 'border': 'single',
       \ 'title': 'rimecmd window',
@@ -16,18 +16,31 @@ function! Oneshot() abort
     \ }
   \ )
 
-  function! InsertCommitString(commit_string, buffer, pos) abort
+  function! OnStdout(job_id, data, event) abort closure
+    let commit_string = a:data[0]
+    " Neovim triggers on_stdout callback with a list of an empty string
+    " when it gets EOF
+    if commit_string ==# ''
+      return
+    endif
+    let cursor_pos = nvim_win_get_cursor(text_win)
     call nvim_buf_set_text(
-      \ a:buffer,
-      \ a:pos[0],
-      \ a:pos[1],
-      \ a:pos[0],
-      \ a:pos[1],
-      \ [a:commit_string]
+      \ nvim_win_get_buf(text_win),
+      \ cursor_pos[0] - 1,
+      \ cursor_pos[1],
+      \ cursor_pos[0] - 1,
+      \ cursor_pos[1],
+      \ [commit_string]
+    \ )
+    call nvim_win_set_cursor(
+      \ text_win, [
+        \ cursor_pos[0],
+        \ cursor_pos[1] + strlen(commit_string)
+      \ ],
     \ )
   endfunction
-  function! CleanUp(rimecmd_window_to_close) abort
-    call nvim_win_close(a:rimecmd_window_to_close, v:true)
+  function! OnExit(job_id, data, event) abort closure
+    call nvim_win_close(rimecmd_window, v:true)
     call jobstart(
       \ ['rm', '-f', '/tmp/nvim_rimecmd_oneshot'],
       \ { 'detach': v:true },
@@ -42,15 +55,13 @@ function! Oneshot() abort
   let stdout_read_job_id = jobstart(
     \ printf("mkfifo %s && cat %s", fifo_filename, fifo_filename),
     \ {
-      \ "on_stdout": { job_id, data, event -> InsertCommitString(
-        \ data[0], current_buf, [current_cursor[0] - 1, current_cursor[1]]
-      \ )}
+      \ "on_stdout": function('OnStdout') 
     \ },
   \ )
   let rimecmd_job_id = termopen(
     \ printf("rimecmd > %s", fifo_filename),
     \ {
-      \ 'on_exit': {job_id, exitcode, event -> CleanUp(rimecmd_window)},
+      \ 'on_exit': function('OnExit')
     \ }
   \ )
   if rimecmd_job_id == -1
@@ -59,4 +70,5 @@ function! Oneshot() abort
   endif
   startinsert
 endfunction
-command! Rimecmd call Oneshot()
+command! Rimecmd call Oneshot(v:false)
+command! RimecmdAppend call Oneshot(v:true)

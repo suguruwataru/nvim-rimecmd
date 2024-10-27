@@ -190,7 +190,17 @@ function! NextCharStartingCol(buf, cursor) abort
   \ )
 endfunction
 
+function! rimecmd.Stop() abort dict
+  let jobs = [
+    \ self.mem_var.rimecmd_job_id,
+    \ self.mem_var.stdout_read_job_id,
+  \ ]
+  call jobstop(self.mem_var.rimecmd_job_id)
+  call jobwait(jobs)
+endfunction
+
 command! Rimecmd call rimecmd.Enter(v:false, v:false)
 command! RimecmdAppend call rimecmd.Enter(v:false, v:true)
 command! RimecmdOneshot call rimecmd.Enter(v:true, v:false)
 command! RimecmdOneshotAppend call rimecmd.Enter(v:true, v:true)
+command! RimecmdStop call rimecmd.Stop()

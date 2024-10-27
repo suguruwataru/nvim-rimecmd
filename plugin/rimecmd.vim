@@ -1,8 +1,6 @@
 let s:extmark_ns = nvim_create_namespace('rimecmd')
 let s:rimecmd_mode = #{
   \ active: v:false,
-  \ no_pending_input: v:true,
-  \ term_already_setup: v:false,
 \ }
 
 function! s:NextCharStartingCol(buf, cursor) abort
@@ -205,15 +203,15 @@ function! s:rimecmd_mode.CommitString(commit_string) abort dict
   \ )
   let text_cursor[1] += strlen(a:commit_string)
   call nvim_win_set_cursor(self.members.text_win, text_cursor)
-  let self.no_pending_input = v:true
+  let self.members.no_pending_input = v:true
 endfunction
 
 function! s:rimecmd_mode.SetupTerm() abort dict
-  if self.term_already_setup
+  if self.members.term_already_setup
     return
   endif
 
-  let self.term_already_setup = v:true
+  let self.members.term_already_setup = v:true
   " The reason of the fifo redirection used here is neovim's limitation. When
   " the job's process is connected to a terminal, all output are sent
   " to stdout. As a result, redirection is used to separate actual stdout
@@ -236,7 +234,7 @@ function! s:rimecmd_mode.SetupTerm() abort dict
     if exists(
       \ "decoded_json.outcome.effect.update_ui.composition.length"
     \ )
-      let self.no_pending_input =
+      let self.members.no_pending_input =
         \ decoded_json.outcome.effect.update_ui.composition.length == 0
     endif
     if !exists("decoded_json.outcome.effect.commit_string")
@@ -264,14 +262,14 @@ function! s:rimecmd_mode.SetupTerm() abort dict
     endif
     if decoded_json.call.params.keycode == 65288
     \ && decoded_json.call.params.mask == 0
-    \ && self.no_pending_input
+    \ && self.members.no_pending_input
       call self.BackspaceWhenNoPendingInput()
       call self.DrawCursorExtmark()
       call self.ReconfigureWindow()
     endif
     if decoded_json.call.params.keycode == 65293
     \ && decoded_json.call.params.mask == 0
-    \ && self.no_pending_input
+    \ && self.members.no_pending_input
       call self.EnterWhenNoPendingInput()
       call self.DrawCursorExtmark()
       call self.ReconfigureWindow()
@@ -354,6 +352,8 @@ function! s:rimecmd_mode.Enter() abort dict
   let self.members = #{
     \ text_win: nvim_get_current_win(),
     \ rimecmd_buf: rimecmd_buf,
+    \ no_pending_input: v:true,
+    \ term_already_setup: v:false,
   \ }
 
   augroup rimecmd_mode
@@ -430,7 +430,7 @@ function! s:rimecmd_mode.Exit() abort dict
     call jobstop(self.members.request_read_job_id)
     call jobwait([self.members.request_read_job_id])
   endif
-  let self.term_already_setup = v:false
+  let self.members.term_already_setup = v:false
   if exists('self.members.rimecmd_win')
     call nvim_win_close(self.members.rimecmd_win, v:true)
   endif

@@ -46,17 +46,29 @@ function! s:GetMenuPageSize() abort
       echoerr "rimecmd --json returned error"
       throw reply.error.message
     endif
-    call jobstop(a:job_id)
+    call chanclose(a:job_id, 'stdin')
   endfunction
 
-  function! ThrowOnStderr(job_id, data, _event) abort closure
-    throw printf("rimecmd got problem: %s", a:data[0])
+  let error_message = ''
+
+  function! SetErrorMessageOnStderr(job_id, data, _event) abort closure
+    let error_message .= join(a:data, "\n")
+  endfunction
+
+  function! MaybeThrowOnExit(job_id, data, _event) abort closure
+    " 2 is rimecmd's exit code for one input being closed while listening
+    " for both tty and stdin.
+    if a:data != 2
+      echom a:data
+      throw printf('rimecmd got problem: %s', error_message)
+    endif
   endfunction
 
   function! RunProcess() abort
     let get_height_job_id = jobstart(["rimecmd", "--json"], #{
       \ on_stdout: function('GetMenuPageSizeOnStdout'),
-      \ on_stderr: function('ThrowOnStderr'),
+      \ on_stderr: function('SetErrorMessageOnStderr'),
+      \ on_exit: function('MaybeThrowOnExit'),
     \ })
     if get_height_job_id == -1
       throw "Cannot execute rimecmd. Is it available from your PATH?"

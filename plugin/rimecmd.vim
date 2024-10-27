@@ -8,13 +8,25 @@ function! rimecmd.OnModeChangedI() abort dict
   call self.Enter(v:false, v:false)
 endfunction
 
+function! rimecmd.OnModeChangedN() abort dict
+  if self.active
+    if nvim_get_current_win() == self.mem_var.rimecmd_win
+      call self.Stop()
+    endif
+  endif
+endfunction
+
 function! rimecmd.RimecmdEnable() abort dict
   function! OnModeChangedI() abort closure
     call self.OnModeChangedI()
   endfunction
+  function! OnModeChangedN() abort closure
+    call self.OnModeChangedN()
+  endfunction
   augroup rimecmd_mode
     autocmd!
     autocmd ModeChanged *:i call OnModeChangedI()
+    autocmd ModeChanged t:nt call OnModeChangedN()
   augroup END
 endfunction
 

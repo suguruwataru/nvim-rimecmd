@@ -203,7 +203,20 @@ function! s:rimecmd_mode.CommitString(commit_string) abort dict
   \ )
   let text_cursor[1] += strlen(a:commit_string)
   call nvim_win_set_cursor(self.members.text_win, text_cursor)
-  let self.members.no_pending_input = v:true
+endfunction
+
+function! s:rimecmd_mode.CommitRawKeyEventString(raw_key_event) abort dict
+  echom a:raw_key_event
+  if exists("a:raw_key_event.accompanying_commit_string")
+    if a:raw_key_event.accompanying_commit_string != v:null
+      call self.CommitString(a:raw_key_event.accompanying_commit_string)
+    endif
+    call self.CommitString(
+      \ nr2char(a:raw_key_event.keycode)
+    \ )
+  else
+    throw "Unexpected JSON format"
+  endif
 endfunction
 
 function! s:rimecmd_mode.SetupTerm() abort dict
@@ -218,11 +231,6 @@ function! s:rimecmd_mode.SetupTerm() abort dict
   " from terminal control output.
   let stdout_fifo = tempname()
   let stdin_fifo = tempname()
-  " The key event is directly passed to the terminal window. In order to
-  " get what the key event is, and handle properly Enter and Backspace events
-  " that happen when there isn't pending input for Rime, we check the requests
-  " also
-  let request_fifo = tempname()
 
   function! OnPipedRimecmdStdout(_job_id, data, _event) abort closure
     " Neovim triggers on_stdout callback with a list of an empty string
@@ -231,60 +239,36 @@ function! s:rimecmd_mode.SetupTerm() abort dict
       return
     endif
     let decoded_json = json_decode(a:data[0])
-    if exists("decoded_json.outcome.effect.update_ui.composition.length")
-      let self.members.no_pending_input =
-        \ decoded_json.outcome.effect.update_ui.composition.length == 0
-    endif
     if exists("decoded_json.outcome.effect.raw_key_event.keycode")
-      \ && decoded_json.outcome.effect.raw_key_event.keycode >= 0
+      " Keycodes taken from src/rime/key_table.cc of the project librime,
+      " commit 5f5a688.
+      if decoded_json.outcome.effect.raw_key_event.keycode >= 0
       \ && decoded_json.outcome.effect.raw_key_event.keycode <= 127
-      if exists(
-        \ "decoded_json.outcome.effect.raw_key_event.accompanying_commit_string"
-      \ )
-      \ && decoded_json.outcome.effect.raw_key_event.accompanying_commit_string
-      \ != v:null
-        call self.CommitString(
-          \ decoded_json.outcome.effect.raw_key_event.accompanying_commit_string
+        call self.CommitRawKeyEventString(
+          \ decoded_json.outcome.effect.raw_key_event
         \ )
+        call self.DrawCursorExtmark()
+        call self.ReconfigureWindow()
       endif
-      call self.CommitString(
-        \ nr2char(decoded_json.outcome.effect.raw_key_event.keycode)
-      \ )
-      call self.DrawCursorExtmark()
-      call self.ReconfigureWindow()
+      if !exists("decoded_json.outcome.effect.raw_key_event.mask")
+        throw "Unexpected JSON format"
+      endif
+      " Handle the Backspace key
+      if decoded_json.outcome.effect.raw_key_event.keycode == 65288
+      \ && decoded_json.outcome.effect.raw_key_event.mask == 0
+        call self.BackspaceWhenNoPendingInput()
+        call self.DrawCursorExtmark()
+        call self.ReconfigureWindow()
+      endif
+      " Handle the Enter key
+      if decoded_json.outcome.effect.raw_key_event.keycode == 65293
+      \ && decoded_json.outcome.effect.raw_key_event.mask == 0
+        call self.EnterWhenNoPendingInput()
+        call self.DrawCursorExtmark()
+        call self.ReconfigureWindow()
+      endif
     elseif exists("decoded_json.outcome.effect.commit_string")
       call self.CommitString(decoded_json.outcome.effect.commit_string)
-      call self.DrawCursorExtmark()
-      call self.ReconfigureWindow()
-    endif
-  endfunction
-
-  function! OnPipedRequestStdout(_job_id, data, _event) abort closure
-    " Neovim triggers on_stdout callback with a list of an empty string
-    " when it gets EOF
-    if a:data[0] ==# ''
-      return
-    endif
-    let decoded_json = json_decode(a:data[0])
-    if !exists("decoded_json.call.method")
-    \ || decoded_json.call.method !=# "process_key"
-      return
-    endif
-    if !exists("decoded_json.call.params.mask")
-    \ || !exists("decoded_json.call.params.keycode")
-      throw "Unexpected JSON format"
-    endif
-    if decoded_json.call.params.keycode == 65288
-    \ && decoded_json.call.params.mask == 0
-    \ && self.members.no_pending_input
-      call self.BackspaceWhenNoPendingInput()
-      call self.DrawCursorExtmark()
-      call self.ReconfigureWindow()
-    endif
-    if decoded_json.call.params.keycode == 65293
-    \ && decoded_json.call.params.mask == 0
-    \ && self.members.no_pending_input
-      call self.EnterWhenNoPendingInput()
       call self.DrawCursorExtmark()
       call self.ReconfigureWindow()
     endif
@@ -294,8 +278,7 @@ function! s:rimecmd_mode.SetupTerm() abort dict
     call nvim_set_current_win(self.members.rimecmd_win)
     let self.members.rimecmd_job_id = termopen(
       \ ["sh", "-c", printf(
-        \ "exec rimecmd --duplicate-requests '%s' --tty --json -c < '%s' > '%s'",
-        \ request_fifo,
+        \ "exec rimecmd --tty --json -c < '%s' > '%s'",
         \ stdin_fifo,
         \ stdout_fifo,
       \ )],
@@ -324,21 +307,12 @@ function! s:rimecmd_mode.SetupTerm() abort dict
     if self.members.stdout_read_job_id == -1
       throw "cannot read rimecmd's output"
     endif
-    let self.members.request_read_job_id = jobstart(
-      \ ["cat", request_fifo],
-      \ #{
-        \ on_stdout: function('OnPipedRequestStdout'),
-        \ on_exit: {-> jobstart(["rm", "-f", request_fifo])},
-      \ },
-    \ )
-    startinsert
   endfunction
 
   call jobstart(["sh", "-c", printf(
-      \ "mkfifo '%s' && mkfifo '%s' && exec mkfifo '%s'",
+      \ "mkfifo '%s' && exec mkfifo '%s'",
       \ stdout_fifo,
       \ stdin_fifo,
-      \ request_fifo,
     \ )], {
     \ "on_exit": function('OnMkfifoStdoutFifoExit'),
   \ })
@@ -368,7 +342,6 @@ function! s:rimecmd_mode.Enter() abort dict
   let self.members = #{
     \ text_win: nvim_get_current_win(),
     \ rimecmd_buf: rimecmd_buf,
-    \ no_pending_input: v:true,
     \ term_already_setup: v:false,
   \ }
 
@@ -441,10 +414,6 @@ function! s:rimecmd_mode.Exit() abort dict
   if exists('self.members.stdout_read_job_id')
     call jobstop(self.members.stdout_read_job_id)
     call jobwait([self.members.stdout_read_job_id])
-  endif
-  if exists('self.members.request_read_job_id')
-    call jobstop(self.members.request_read_job_id)
-    call jobwait([self.members.request_read_job_id])
   endif
   let self.members.term_already_setup = v:false
   if exists('self.members.rimecmd_win')

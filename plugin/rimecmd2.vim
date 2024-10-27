@@ -17,7 +17,7 @@ endfunction
 function! s:GetMenuPageSize() abort
   let record = #{ }
 
-  function! OnStdout(job_id, data, _event) abort dict closure
+  function! GetMenuPageSizeOnStdout(job_id, data, _event) abort closure
     " Neovim triggers on_stdout callback with a list of an empty string
     " when it gets EOF
     if a:data[0] == ''
@@ -36,7 +36,7 @@ function! s:GetMenuPageSize() abort
 
   function! RunProcess() abort
     let get_height_job_id = jobstart(["rimecmd", "--json"], #{
-      \ on_stdout: function('OnStdout'),
+      \ on_stdout: function('GetMenuPageSizeOnStdout'),
     \ })
     if get_height_job_id == -1
       throw "Cannot execute rimecmd. Is it available from your PATH?"
@@ -115,7 +115,7 @@ function! s:rimecmd_mode.SetupTerm() abort dict
   " from terminal control output.
   let stdout_fifo = tempname()
 
-  function! OnStdout(_job_id, data, _event) abort closure
+  function! SetupTermOnStdout(_job_id, data, _event) abort closure
     " Neovim triggers on_stdout callback with a list of an empty string
     " when it gets EOF
     if a:data[0] == ''
@@ -154,7 +154,7 @@ function! s:rimecmd_mode.SetupTerm() abort dict
     let self.members.stdout_read_job_id = jobstart(
       \ ["cat", stdout_fifo],
       \ #{
-        \ on_stdout: function('OnStdout'),
+        \ on_stdout: function('SetupTermOnStdout'),
         \ on_exit: function('OnCatExit'),
       \ },
     \ )
@@ -171,16 +171,16 @@ endfunction
 
 function! s:rimecmd_mode.Enter() abort dict
   let self.active = v:true
-  let menu_page_size = s:GetMenuPageSize()
   let rimecmd_buf = nvim_create_buf(v:false, v:true)
   let self.members = #{
     \ text_win: nvim_get_current_win(),
+    \ rimecmd_buf: rimecmd_buf,
     \ rimecmd_win: nvim_open_win(
       \ rimecmd_buf, v:true, {
         \ 'relative': 'cursor',
         \ 'row': 1,
         \ 'col': 2,
-        \ 'height': menu_page_size + 1,
+        \ 'height': s:GetMenuPageSize() + 1,
         \ 'width': 40,
         \ 'focusable': v:true,
         \ 'border': 'single',
@@ -189,7 +189,39 @@ function! s:rimecmd_mode.Enter() abort dict
       \ },
     \ ),
   \ }
+  call self.DrawCursorExtmark()
   call self.SetupTerm()
+endfunction
+
+function! s:rimecmd_mode.ShowWindow() abort dict
+  if exists('self.members.rimecmd_win') || !exists('self.members.rimecmd_buf')
+    return
+  endif
+  let self.members.rimecmd_win = nvim_open_win(
+    \ self.members.rimecmd_buf, v:true, {
+      \ 'relative': 'cursor',
+      \ 'row': 1,
+      \ 'col': 2,
+      \ 'height': s:GetMenuPageSize() + 1,
+      \ 'width': 40,
+      \ 'focusable': v:true,
+      \ 'border': 'single',
+      \ 'title': 'rimecmd window',
+      \ 'noautocmd': v:true,
+    \ },
+  \ )
+endfunction
+
+function! s:rimecmd_mode.HideWindow() abort dict
+  if exists('self.members.rimecmd_win')
+    call nvim_win_hide(self.members.rimecmd_win)
+    unlet self.members.rimecmd_win
+  endif
+  call nvim_buf_del_extmark(
+    \ nvim_win_get_buf(self.members.text_win),
+    \ s:extmark_ns,
+    \ self.members.cursor_extmark_id,
+  \ )
 endfunction
 
 function! s:rimecmd_mode.Exit() abort dict
@@ -198,9 +230,8 @@ function! s:rimecmd_mode.Exit() abort dict
     call jobstop(self.members.rimecmd_job_id)
     call jobwait([self.members.rimecmd_job_id])
   endif
-  let rimecmd_buf = nvim_win_get_buf(self.members.rimecmd_win)
-  call nvim_win_close(self.members.rimecmd_win, v:false)
-  call nvim_buf_delete(rimecmd_buf, #{force: v:true})
+  call nvim_win_close(self.members.rimecmd_win, v:true)
+  call nvim_buf_delete(self.members.rimecmd_buf, #{force: v:true})
   call nvim_buf_del_extmark(
     \ nvim_win_get_buf(self.members.text_win),
     \ s:extmark_ns,
@@ -211,3 +242,5 @@ function! s:rimecmd_mode.Exit() abort dict
 endfunction
 
 command! Rimecmd call s:rimecmd_mode.Toggle()
+command! RimecmdHide call s:rimecmd_mode.HideWindow()
+command! RimecmdShow call s:rimecmd_mode.ShowWindow()

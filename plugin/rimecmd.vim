@@ -32,17 +32,31 @@ function! Rimecmd(oneshot, append) abort
 
   function! DrawCursorExtmark() abort closure
     let text_cursor = nvim_win_get_cursor(text_win)
-    let col = a:append
+    let extmark_start_col = a:append
       \ ? NextCol(nvim_win_get_buf(text_win), text_cursor) 
       \ : text_cursor[1]
+    let line_text = nvim_buf_get_lines(
+      \ nvim_win_get_buf(text_win),
+      \ text_cursor[0] - 1,
+      \ text_cursor[0],
+      \ v:true,
+    \ )[0]
     return nvim_buf_set_extmark(
       \ nvim_win_get_buf(text_win),
       \ s:extmark_ns,
       \ text_cursor[0] - 1,
-      \ col, {
+      \ extmark_start_col, extmark_start_col == strlen(line_text) ? {
         \ 'virt_text': [['　', 'CursorIM']],
-        \ 'virt_text_pos': 'overlay',
-        \ 'hl_mode': 'combine',
+      \ } : {
+        \ 'end_row': text_cursor[0] - 1,
+        \ 'end_col': min([
+          \ NextCol(
+            \ nvim_win_get_buf(text_win),
+            \ [text_cursor[0], extmark_start_col],
+          \ ),
+          \ strlen(line_text) - 1,
+        \ ]),
+        \ 'hl_group': 'CursorIM',
       \ }
     \ )
   endfunction

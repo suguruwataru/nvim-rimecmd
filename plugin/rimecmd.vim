@@ -1,4 +1,4 @@
-let s:extmark_ns = nvim_create_namespace('rimecmd')
+let s:extmark_ns = nvim_create_namespace('')
 let s:rimecmd_mode = #{
   \ active: v:false,
 \ }

@@ -254,6 +254,11 @@ function! s:rimecmd_mode.SetupTerm() abort dict
       return
     endif
     let decoded_json = json_decode(a:data[0])
+    if exists('decoded_json.outcome.error')
+      echoerr "rimecmd replied with error"
+      echoerr decoded_json.outcome.error
+      return
+    endif
     if exists("decoded_json.outcome.effect.raw_key_event.keycode")
       " Keycodes taken from src/rime/key_table.cc of the project librime,
       " commit 5f5a688.
@@ -303,9 +308,8 @@ function! s:rimecmd_mode.SetupTerm() abort dict
       throw "cannot execute rimecmd"
     endif
     let self.members.stdin_write_job_id = jobstart(
-      \ ["tee", stdin_fifo],
+      \ ["sh", "-c", printf("exec cat > '%s'", stdin_fifo)],
       \ #{
-        \ on_stdout: function('OnPipedRimecmdStdout'),
         \ on_exit: {-> jobstart(["rm", "-f", stdin_fifo])},
       \ },
     \ )
@@ -407,6 +411,15 @@ function! s:rimecmd_mode.HideWindow() abort dict
     \ s:extmark_ns,
     \ self.members.cursor_extmark_id,
   \ )
+  if exists('self.members.stdin_write_job_id')
+    echom "writing"
+    call chansend(self.members.stdin_write_job_id, json_encode(#{
+      \ id: tempname(),
+      \ call: #{
+        \ method: "clear_composition",
+      \ }
+    \ }))
+  endif
 endfunction
 
 function! s:rimecmd_mode.Exit() abort dict

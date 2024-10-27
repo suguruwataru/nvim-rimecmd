@@ -231,18 +231,32 @@ function! s:rimecmd_mode.SetupTerm() abort dict
       return
     endif
     let decoded_json = json_decode(a:data[0])
-    if exists(
-      \ "decoded_json.outcome.effect.update_ui.composition.length"
-    \ )
+    if exists("decoded_json.outcome.effect.update_ui.composition.length")
       let self.members.no_pending_input =
         \ decoded_json.outcome.effect.update_ui.composition.length == 0
     endif
-    if !exists("decoded_json.outcome.effect.commit_string")
-      return
+    if exists("decoded_json.outcome.effect.raw_key_event.keycode")
+      \ && decoded_json.outcome.effect.raw_key_event.keycode >= 0
+      \ && decoded_json.outcome.effect.raw_key_event.keycode <= 127
+      if exists(
+        \ "decoded_json.outcome.effect.raw_key_event.accompanying_commit_string"
+      \ )
+      \ && decoded_json.outcome.effect.raw_key_event.accompanying_commit_string
+      \ != v:null
+        call self.CommitString(
+          \ decoded_json.outcome.effect.raw_key_event.accompanying_commit_string
+        \ )
+      endif
+      call self.CommitString(
+        \ nr2char(decoded_json.outcome.effect.raw_key_event.keycode)
+      \ )
+      call self.DrawCursorExtmark()
+      call self.ReconfigureWindow()
+    elseif exists("decoded_json.outcome.effect.commit_string")
+      call self.CommitString(decoded_json.outcome.effect.commit_string)
+      call self.DrawCursorExtmark()
+      call self.ReconfigureWindow()
     endif
-    call self.CommitString(decoded_json.outcome.effect.commit_string)
-    call self.DrawCursorExtmark()
-    call self.ReconfigureWindow()
   endfunction
 
   function! OnPipedRequestStdout(_job_id, data, _event) abort closure

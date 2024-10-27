@@ -47,7 +47,7 @@ function! s:rimecmd.OnCursorMoved() abort dict
   let cursor_win = nvim_get_current_win()
   if cursor_win != self.mem_var.rimecmd_win
     \ && nvim_win_is_valid(self.mem_var.rimecmd_win)
-    call self.ReconfigureWindow()
+    call self.ReconfigureWindow(v:null)
   endif
 endfunction
 
@@ -77,7 +77,7 @@ function! s:rimecmd.Enter(oneshot, append, start_inserting) abort dict
     else
       call self.DetermineAppend(a:append)
       call self.DrawCursorExtmark()
-      call self.ReconfigureWindow()
+      call self.ReconfigureWindow(v:null)
       call nvim_set_current_win(self.mem_var.rimecmd_win)
       if a:start_inserting
         call nvim_feedkeys("i", 'n', v:true)
@@ -95,7 +95,7 @@ function! s:rimecmd.Enter(oneshot, append, start_inserting) abort dict
         \ 'relative': 'cursor',
         \ 'row': 1,
         \ 'col': 2,
-        \ 'height': 10,
+        \ 'height': 1,
         \ 'width': 40,
         \ 'focusable': v:true,
         \ 'border': 'single',
@@ -110,7 +110,6 @@ function! s:rimecmd.Enter(oneshot, append, start_inserting) abort dict
     call self.DrawCursorExtmark()
   endif
   call self.SetupTerm(a:oneshot)
-  call nvim_set_current_win(self.mem_var.rimecmd_win)
   function! OnCursorMoved() abort closure
     call self.OnCursorMoved()
   endfunction
@@ -159,84 +158,113 @@ function! s:rimecmd.OnExit(job_id, data, event) abort dict
 endfunction
 
 function! s:rimecmd.OnStdout(job_id, data, event) abort dict
-  let commit_string = a:data[0]
   " Neovim triggers on_stdout callback with a list of an empty string
   " when it gets EOF
-  if commit_string ==# ''
+  if a:data[0] == ''
     return
   endif
-  let text_cursor = nvim_win_get_cursor(self.mem_var.text_win)
-  let col = self.mem_var.append
-    \ ? s:NextCharStartingCol(
+  let reply = json_decode(a:data[0])
+  if exists('reply.outcome.error')
+    throw reply.outcome.error
+  endif
+  if exists('reply.outcome.effect.commit_string')
+    let commit_string = reply.outcome.effect.commit_string
+    let text_cursor = nvim_win_get_cursor(self.mem_var.text_win)
+    let col = self.mem_var.append
+      \ ? s:NextCharStartingCol(
+        \ nvim_win_get_buf(self.mem_var.text_win),
+        \ text_cursor
+      \ ) : text_cursor[1]
+    call nvim_buf_set_text(
       \ nvim_win_get_buf(self.mem_var.text_win),
-      \ text_cursor
-    \ ) : text_cursor[1]
-  call nvim_buf_set_text(
-    \ nvim_win_get_buf(self.mem_var.text_win),
-    \ text_cursor[0] - 1,
-    \ col,
-    \ text_cursor[0] - 1,
-    \ col,
-    \ [commit_string],
-  \ )
-  let text_cursor[1] += strlen(commit_string)
-  call nvim_win_set_cursor(self.mem_var.text_win, text_cursor)
-  call self.DrawCursorExtmark()
-  call self.ReconfigureWindow()
+      \ text_cursor[0] - 1,
+      \ col,
+      \ text_cursor[0] - 1,
+      \ col,
+      \ [commit_string],
+    \ )
+    let text_cursor[1] += strlen(commit_string)
+    call nvim_win_set_cursor(self.mem_var.text_win, text_cursor)
+    call self.DrawCursorExtmark()
+    call self.ReconfigureWindow(1)
+  endif
+  if exists('reply.outcome.effect.update_ui')
+    let height = len(reply.outcome.effect.update_ui.menu.candidates) + 1
+    call self.ReconfigureWindow(height)
+    return
+  endif
 endfunction
 
-function! s:rimecmd.ReconfigureWindow() abort dict
+function! s:rimecmd.ReconfigureWindow(height) abort dict
   let current_win = nvim_get_current_win()
   noautocmd call nvim_set_current_win(self.mem_var.text_win)
-  call nvim_win_set_config(self.mem_var.rimecmd_win, {
+  let win_config = {
     \ 'relative': 'cursor',
     \ 'row': 1,
     \ 'col': 0,
-  \ })
+  \ }
+  call nvim_win_set_config(self.mem_var.rimecmd_win, win_config)
+  call nvim_win_set_config(self.mem_var.rimecmd_win, #{height: a:height})
   noautocmd call nvim_set_current_win(current_win)
 endfunction
 
 function! s:rimecmd.SetupTerm(oneshot) abort dict
-  let fifo_filename = tempname()
+  let stdin_fifo = tempname()
+  let stdout_fifo = tempname()
 
   " The reason of the fifo redirection used here is neovim's limitation. When
   " the job's process is connected to a terminal, all output are sent
   " to stdout.
 
   function! OnCatExit(_job_id, _data, _event) abort closure
-    call jobstart(["rm", "-f", fifo_filename])
+    call jobstart(["rm", "-f", stdin_fifo])
+    call jobstart(["rm", "-f", stdout_fifo])
   endfunction
 
-  function! OnMkfifoExit(_job_id, exit_code, _event) abort closure
+  function! OnMkfifoStdinFifoExit(_job_id, exit_code, _event) abort closure
     if a:exit_code != 0
       throw "The temporary file needed by this plugin cannot be created."
     endif
+    noautocmd call nvim_set_current_win(self.mem_var.rimecmd_win)
+    let self.mem_var.rimecmd_job_id = termopen(
+      \ ["/bin/sh", "-c", printf(
+        \ "cat %s | rimecmd --json --tty %s > %s",
+        \ stdin_fifo,
+        \ a:oneshot ? "" : "--continue",
+        \ stdout_fifo,
+      \ )],
+      \ {
+        \ 'on_exit': function(self.OnExit, self)
+      \ }
+    \ )
+    if self.mem_var.rimecmd_job_id == -1
+      throw "Cannot execute rimecmd. Is it available from your PATH?"
+      call jobstop(self.mem_var.stdout_read_job_id)
+      self.OnExit()
+      return
+    endif
     let self.mem_var.stdout_read_job_id = jobstart(
-      \ ["cat", fifo_filename],
+      \ ["cat", stdout_fifo],
       \ {
         \ "on_stdout": function(self.OnStdout, self),
         \ "on_exit": function('OnCatExit'),
       \ },
     \ )
+    call nvim_set_current_win(self.mem_var.text_win)
   endfunction
 
-  call jobstart(["mkfifo", fifo_filename], {
-    \ "on_exit": function('OnMkfifoExit'),
-  \ })
+  function! OnMkfifoStdoutFifoExit(_job_id, exit_code, _event) abort closure
+    if a:exit_code != 0
+      throw "The temporary file needed by this plugin cannot be created."
+    endif
+    call jobstart(["mkfifo", stdin_fifo], {
+      \ "on_exit": function('OnMkfifoStdinFifoExit'),
+    \ })
+  endfunction
 
-  let self.mem_var.rimecmd_job_id = termopen(
-    \ ["/bin/sh", "-c", printf(
-      \ "rimecmd %s > %s", a:oneshot ? "" : "--continue", fifo_filename,
-    \ )],
-    \ {
-      \ 'on_exit': function(self.OnExit, self)
-    \ }
-  \ )
-  if self.mem_var.rimecmd_job_id == -1
-    throw "Cannot execute rimecmd. Is it available from your PATH?"
-    call jobstop(self.mem_var.stdout_read_job_id)
-    self.OnExit()
-  endif
+  call jobstart(["mkfifo", stdout_fifo], {
+    \ "on_exit": function('OnMkfifoStdoutFifoExit'),
+  \ })
 endfunction
 
 function! s:rimecmd.DrawCursorExtmark() abort dict

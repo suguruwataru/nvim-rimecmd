@@ -1,0 +1,28 @@
+nvim-rimecmd 基于中州韻輸入法引擎的Neovim中文输入插件
+nvim-rimecmd *nvim-rimecmd*
+===============================================================================
+目录
+  
+  命令 |nvim-rimecmd-commands|
+    Rimecmd |:Rimecmd|
+    RimecmdStatus |:RimecmdStatus|
+
+===============================================================================
+命令 *nvim-rimecmd-commands*
+
+Rimecmd *:Rimecmd*
+
+  开关“rimecmd模式”的命令。不处于rimecmd模式时，会开启rimecmd模式。反之则关闭
+  rimecmd模式。
+
+RimecmdStatus *:RimecmdStatus*
+
+  查看是否处于“rimecmd模式”。
+
+===============================================================================
+协议
+
+MIT
+
+===============================================================================
+vim:tw=80:sw=2:ts=2:ft=help:norl:nowrap:

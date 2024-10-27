@@ -1,6 +1,24 @@
 let s:extmark_ns = nvim_create_namespace('rimecmd')
 let rimecmd = #{ active: v:false }
 
+function! rimecmd.OnCursorMoved() abort dict
+  let cursor_win = nvim_get_current_win()
+  if cursor_win != self.mem_var.rimecmd_win
+    " Only when the cursor is in the rimecmd window, we need to ourselves
+    " draw a cursor for the text window.
+    if exists("self.mem_var.cursor_extmark_id")
+      call nvim_buf_del_extmark(
+        \ nvim_win_get_buf(self.mem_var.text_win),
+        \ s:extmark_ns,
+        \ self.mem_var.cursor_extmark_id,
+      \ )
+      unlet self.mem_var.cursor_extmark_id
+    endif
+  else
+    call self.DrawCursorExtmark()
+  endif
+endfunction
+
 function! rimecmd.Enter(oneshot, append) abort dict
   if self.active
     if a:oneshot
@@ -43,20 +61,33 @@ function! rimecmd.Enter(oneshot, append) abort dict
   call self.DrawCursorExtmark()
   call self.SetupTerm(a:oneshot)
   call nvim_set_current_win(self.mem_var.rimecmd_win)
+  function! OnCursorMoved() abort closure
+    call self.OnCursorMoved()
+  endfunction
+  augroup rimecmd
+    autocmd CursorMoved * call OnCursorMoved()
+  augroup END
   startinsert
 endfunction
 
 function! rimecmd.OnExit(job_id, data, event) abort dict
+  augroup rimecmd
+    au!
+  augroup END
   call nvim_set_current_win(self.mem_var.text_win)
   " User could manually close rimecmd_win, so this check is needed.
   if nvim_win_is_valid(self.mem_var.rimecmd_win)
     call nvim_win_close(self.mem_var.rimecmd_win, v:true)
   endif
-  call nvim_buf_del_extmark(
-    \ nvim_win_get_buf(self.mem_var.text_win),
-    \ s:extmark_ns,
-    \ self.mem_var.cursor_extmark_id,
-  \ )
+  " When exiting happens when the cursor is not in the rimecmd window,
+  " we do not have the extmark.
+  if exists("self.mem_var.cursor_extmark_id")
+    call nvim_buf_del_extmark(
+      \ nvim_win_get_buf(self.mem_var.text_win),
+      \ s:extmark_ns,
+      \ self.mem_var.cursor_extmark_id,
+    \ )
+  endif
   unlet self.mem_var
   let self.active = v:false
 endfunction

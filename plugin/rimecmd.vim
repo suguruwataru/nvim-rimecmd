@@ -2,24 +2,16 @@ let s:extmark_ns = nvim_create_namespace('rimecmd')
 let s:rimecmd = #{ active: v:false }
 let s:rimecmd_mode = #{ active: v:false }
 
-function! s:rimecmd.OnModeChangedI() abort dict
+function! s:rimecmd_mode.OnModeChangedI() abort dict
   call nvim_feedkeys("\<ESC>", 'n', v:true)
   " If user presses a/A, the cursor is by neovim placed at the append position,
   " so here append = v:false can be used.
-  call self.Enter(v:false, v:false)
+  call s:rimecmd.Enter(v:false, v:false)
 endfunction
 
-function! s:rimecmd.OnModeChangedN() abort dict
-  if self.active
-    if nvim_get_current_win() == self.mem_var.rimecmd_win
-      call self.Stop()
-    endif
-  endif
-endfunction
-
-function! s:rimecmd.ToggleRimecmdMode() abort dict
-  if !s:rimecmd_mode.active
-    let s:rimecmd_mode.active = v:true
+function! s:rimecmd_mode.Toggle() abort dict
+  if !self.active
+    let self.active = v:true
     function! OnModeChangedI() abort closure
       call self.OnModeChangedI()
     endfunction
@@ -28,13 +20,21 @@ function! s:rimecmd.ToggleRimecmdMode() abort dict
       autocmd ModeChanged *:i call OnModeChangedI()
     augroup END
   else
-    if self.active
-      call self.Stop()
+    if rimecmd.active
+      call rimecmd.Stop()
     endif
     augroup rimecmd_mode
       autocmd!
     augroup END
-    let s:rimecmd_mode.active = v:false
+    let self.active = v:false
+  endif
+endfunction
+
+function! s:rimecmd.OnModeChangedN() abort dict
+  if self.active
+    if nvim_get_current_win() == self.mem_var.rimecmd_win
+      call self.Stop()
+    endif
   endif
 endfunction
 
@@ -313,4 +313,4 @@ command! RimecmdAppend call s:rimecmd.Enter(v:false, v:true)
 command! RimecmdOneshot call s:rimecmd.Enter(v:true, v:false)
 command! RimecmdOneshotAppend call s:rimecmd.Enter(v:true, v:true)
 command! RimecmdStop call s:rimecmd.Stop()
-command! Rimecmd call s:rimecmd.ToggleRimecmdMode()
+command! Rimecmd call s:rimecmd_mode.Toggle()

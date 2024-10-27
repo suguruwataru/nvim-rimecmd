@@ -17,7 +17,7 @@ endfunction
 function! s:GetMenuPageSize() abort
   let record = #{ }
 
-  function! GetMenuPageSizeOnStdout(job_id, data, _event) abort closure
+  function! s:GetMenuPageSizeOnStdout(job_id, data, _event) abort closure
     " Neovim triggers on_stdout callback with a list of an empty string
     " when it gets EOF
     if a:data[0] == ''
@@ -34,9 +34,9 @@ function! s:GetMenuPageSize() abort
     call jobstop(a:job_id)
   endfunction
 
-  function! RunProcess() abort
+  function! s:RunProcess() abort
     let get_height_job_id = jobstart(["rimecmd", "--json"], #{
-      \ on_stdout: function('GetMenuPageSizeOnStdout'),
+      \ on_stdout: function('s:GetMenuPageSizeOnStdout'),
     \ })
     if get_height_job_id == -1
       throw "Cannot execute rimecmd. Is it available from your PATH?"
@@ -52,7 +52,7 @@ function! s:GetMenuPageSize() abort
     call jobwait([get_height_job_id])
   endfunction
 
-  call RunProcess()
+  call s:RunProcess()
   return record.value
 endfunction!
 
@@ -115,7 +115,7 @@ function! s:rimecmd_mode.SetupTerm() abort dict
   " from terminal control output.
   let stdout_fifo = tempname()
 
-  function! SetupTermOnStdout(_job_id, data, _event) abort closure
+  function! s:SetupTermOnStdout(_job_id, data, _event) abort closure
     " Neovim triggers on_stdout callback with a list of an empty string
     " when it gets EOF
     if a:data[0] == ''
@@ -139,11 +139,11 @@ function! s:rimecmd_mode.SetupTerm() abort dict
     call self.ReconfigureWindow()
   endfunction
 
-  function! OnCatExit(_job_id, _data, _event) abort closure
+  function! s:OnCatExit(_job_id, _data, _event) abort closure
     call jobstart(["rm", "-f", stdout_fifo])
   endfunction
 
-  function! OnMkfifoStdoutFifoExit(_job_id, exit_code, _event) abort closure
+  function! s:OnMkfifoStdoutFifoExit(_job_id, exit_code, _event) abort closure
     call nvim_set_current_win(self.members.rimecmd_win)
     let self.members.rimecmd_job_id = termopen(
       \ ["sh", "-c", printf("rimecmd --continue > %s", stdout_fifo)],
@@ -154,8 +154,8 @@ function! s:rimecmd_mode.SetupTerm() abort dict
     let self.members.stdout_read_job_id = jobstart(
       \ ["cat", stdout_fifo],
       \ #{
-        \ on_stdout: function('SetupTermOnStdout'),
-        \ on_exit: function('OnCatExit'),
+        \ on_stdout: function('s:SetupTermOnStdout'),
+        \ on_exit: function('s:OnCatExit'),
       \ },
     \ )
     if self.members.stdout_read_job_id == -1
@@ -165,7 +165,7 @@ function! s:rimecmd_mode.SetupTerm() abort dict
   endfunction
 
   call jobstart(["mkfifo", stdout_fifo], {
-    \ "on_exit": function('OnMkfifoStdoutFifoExit'),
+    \ "on_exit": function('s:OnMkfifoStdoutFifoExit'),
   \ })
 endfunction
 
@@ -253,7 +253,9 @@ function! s:rimecmd_mode.Exit() abort dict
     call jobstop(self.members.rimecmd_job_id)
     call jobwait([self.members.rimecmd_job_id])
   endif
-  call nvim_win_close(self.members.rimecmd_win, v:true)
+  if exists('self.members.rimecmd_win')
+    call nvim_win_close(self.members.rimecmd_win, v:true)
+  endif
   call nvim_buf_delete(self.members.rimecmd_buf, #{force: v:true})
   call nvim_buf_del_extmark(
     \ nvim_win_get_buf(self.members.text_win),

@@ -1,5 +1,5 @@
 let s:extmark_ns = nvim_create_namespace('rimecmd')
-let s:rimecmd_mode = #{ active: v:false }
+let s:rimecmd_mode = #{ active: v:false, no_pending_input: v:true }
 
 function! s:NextCharStartingCol(buf, cursor) abort
   let line_text = nvim_buf_get_lines(
@@ -20,7 +20,7 @@ function! s:GetMenuPageSize() abort
   function! s:GetMenuPageSizeOnStdout(job_id, data, _event) abort closure
     " Neovim triggers on_stdout callback with a list of an empty string
     " when it gets EOF
-    if a:data[0] == ''
+    if a:data[0] ==# ''
       return
     endif
     let reply = json_decode(a:data[0])
@@ -108,6 +108,14 @@ function! s:rimecmd_mode.ReconfigureWindow() abort dict
   noautocmd call nvim_set_current_win(current_win)
 endfunction
 
+function! s:rimecmd_mode.BackspaceWhenNoPendingInput() abort dict
+  let current_win = nvim_get_current_win()
+  noautocmd call nvim_set_current_win(self.members.text_win)
+  " TODO
+  exe "normal! i\<BS>\<ESC>"
+  noautocmd call nvim_set_current_win(current_win)
+endfunction
+
 function! s:rimecmd_mode.CommitString(commit_string) abort dict
   let text_cursor = nvim_win_get_cursor(self.members.text_win)
   let row = text_cursor[0] - 1
@@ -131,15 +139,25 @@ function! s:rimecmd_mode.SetupTerm() abort dict
   " from terminal control output.
   let stdout_fifo = tempname()
   let stdin_fifo = tempname()
+  " The key event is directly passed to the terminal window. In order to
+  " get what the key event is, and handle properly Enter and Backspace events
+  " that happen when there isn't pending input for Rime, we check the requests
+  " also
+  let request_fifo = tempname()
 
   function! s:OnPipedRimecmdStdout(_job_id, data, _event) abort closure
     " Neovim triggers on_stdout callback with a list of an empty string
     " when it gets EOF
-    if a:data[0] == ''
+    if a:data[0] ==# ''
       return
     endif
     let decoded_json = json_decode(a:data[0])
-    " TODO Respond to things like backspace and enter
+    if exists(
+      \ "decoded_json.outcome.effect.update_ui.composition.length"
+    \ )
+      let self.no_pending_input = 
+        \ decoded_json.outcome.effect.update_ui.composition.length == 0
+    endif 
     if !exists("decoded_json.outcome.effect.commit_string")
       return
     endif
@@ -148,16 +166,41 @@ function! s:rimecmd_mode.SetupTerm() abort dict
     call self.ReconfigureWindow()
   endfunction
 
-  function! s:OnCatExit(_job_id, _data, _event) abort closure
-    call jobstart(["rm", "-f", stdout_fifo])
+  function! s:OnPipedRequestStdout(_job_id, data, _event) abort closure
+    " Neovim triggers on_stdout callback with a list of an empty string
+    " when it gets EOF
+    if a:data[0] ==# ''
+      return
+    endif
+    let decoded_json = json_decode(a:data[0])
+    if !exists("decoded_json.call.method")
+    \ || decoded_json.call.method !=# "process_key"
+      return
+    endif
+    if !exists("decoded_json.call.params.mask")
+    \ || !exists("decoded_json.call.params.keycode")
+      throw "Unexpected JSON format"
+    endif
+    if decoded_json.call.params.keycode == 65288
+    \ && decoded_json.call.params.mask == 0
+    \ && self.no_pending_input
+      call self.BackspaceWhenNoPendingInput()
+    endif
+    if decoded_json.call.params.keycode == 65293
+    \ && decoded_json.call.params.mask == 0
+    \ && self.no_pending_input
+      " TODO
+      echom "enter"
+    endif
   endfunction
 
   function! s:OnMkfifoStdoutFifoExit(_job_id, exit_code, _event) abort closure
     call nvim_set_current_win(self.members.rimecmd_win)
     let self.members.rimecmd_job_id = termopen(
       \ ["sh", "-c", printf(
-        \ "cat %s | rimecmd --tty --json --continue > %s",
+        \ "cat %s | rimecmd --duplicate-requests %s --tty --json -c > %s",
         \ stdin_fifo,
+        \ request_fifo,
         \ stdout_fifo,
       \ )],
     \ )
@@ -168,19 +211,27 @@ function! s:rimecmd_mode.SetupTerm() abort dict
       \ ["cat", stdout_fifo],
       \ #{
         \ on_stdout: function('s:OnPipedRimecmdStdout'),
-        \ on_exit: function('s:OnCatExit'),
+        \ on_exit: {-> jobstart(["rm", "-f", stdout_fifo])},
       \ },
     \ )
     if self.members.stdout_read_job_id == -1
       throw "cannot read rimecmd's output"
     endif
+    let self.members.request_read_job_id = jobstart(
+      \ ["cat", request_fifo],
+      \ #{
+        \ on_stdout: function('s:OnPipedRequestStdout'),
+        \ on_exit: {-> jobstart(["rm", "-f", request_fifo])},
+      \ },
+    \ )
     startinsert
   endfunction
 
   call jobstart(["sh", "-c", printf(
-      \ "mkfifo %s && mkfifo %s",
+      \ "mkfifo %s && mkfifo %s && mkfifo %s",
       \ stdout_fifo,
       \ stdin_fifo,
+      \ request_fifo,
     \ )], {
     \ "on_exit": function('s:OnMkfifoStdoutFifoExit'),
   \ })

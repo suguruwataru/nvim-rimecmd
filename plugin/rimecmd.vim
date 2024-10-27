@@ -331,6 +331,8 @@ function! s:rimecmd_mode.SetupTerm() abort dict
 endfunction
 
 function! s:rimecmd_mode.OpenWindow() abort dict
+  " TODO The hardcoded width of 40 works for most cases.
+  " However, of course it's best to make it handle longer input.
   let self.members.rimecmd_win = nvim_open_win(
     \ self.members.rimecmd_buf, v:true, {
       \ 'relative': 'cursor',

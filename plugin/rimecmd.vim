@@ -34,7 +34,7 @@ endfunction
 function! s:GetMenuPageSize() abort
   let record = #{ }
 
-  function! s:GetMenuPageSizeOnStdout(job_id, data, _event) abort closure
+  function! GetMenuPageSizeOnStdout(job_id, data, _event) abort closure
     " Neovim triggers on_stdout callback with a list of an empty string
     " when it gets EOF
     if a:data[0] ==# ''
@@ -51,9 +51,9 @@ function! s:GetMenuPageSize() abort
     call jobstop(a:job_id)
   endfunction
 
-  function! s:RunProcess() abort
+  function! RunProcess() abort
     let get_height_job_id = jobstart(["rimecmd", "--json"], #{
-      \ on_stdout: function('s:GetMenuPageSizeOnStdout'),
+      \ on_stdout: function('GetMenuPageSizeOnStdout'),
     \ })
     if get_height_job_id == -1
       throw "Cannot execute rimecmd. Is it available from your PATH?"
@@ -69,7 +69,7 @@ function! s:GetMenuPageSize() abort
     call jobwait([get_height_job_id])
   endfunction
 
-  call s:RunProcess()
+  call RunProcess()
   return record.value
 endfunction!
 

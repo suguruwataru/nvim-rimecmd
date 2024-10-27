@@ -6,7 +6,7 @@ Neovim插件。
 
 nvim-rimecmd要在能运行以下命令的环境中才能使用：
 
-- rimecmd
+- [rimecmd](https://github.com/suguruwataru/nvim-rimecmd)
 - cat
 - sh
 - mkfifo

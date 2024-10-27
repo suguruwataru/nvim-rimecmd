@@ -4,6 +4,18 @@ let rimecmd = #{ active: v:false }
 function! rimecmd.OnCursorMoved() abort dict
   let cursor_win = nvim_get_current_win()
   if cursor_win != self.mem_var.rimecmd_win
+    \ && nvim_win_is_valid(self.mem_var.rimecmd_win)
+    call self.ReconfigureWindow()
+  endif
+endfunction
+
+function! rimecmd.OnCursorMovedI() abort dict
+  call self.OnCursorMoved()
+endfunction
+
+function! rimecmd.OnWinEnter() abort dict
+  let cursor_win = nvim_get_current_win()
+  if cursor_win != self.mem_var.rimecmd_win
     " Only when the cursor is in the rimecmd window, we need to ourselves
     " draw a cursor for the text window.
     if exists("self.mem_var.cursor_extmark_id")
@@ -24,12 +36,7 @@ function! rimecmd.Enter(oneshot, append) abort dict
     if a:oneshot
       " If user asks for oneshot, kill the current job and let
       " the flow go back to the usual oneshot setup
-      let jobs = [
-        \ self.mem_var.rimecmd_job_id,
-        \ self.mem_var.stdout_read_job_id,
-      \ ]
-      call jobstop(self.mem_var.rimecmd_job_id)
-      call jobwait(jobs)
+      call self.Stop()
     else
       let self.mem_var.append = a:append
       call self.DrawCursorExtmark()
@@ -64,8 +71,22 @@ function! rimecmd.Enter(oneshot, append) abort dict
   function! OnCursorMoved() abort closure
     call self.OnCursorMoved()
   endfunction
+  function! OnCursorMovedI() abort closure
+    call self.OnCursorMovedI()
+  endfunction
+  function! OnWinEnter() abort closure
+    call self.OnWinEnter()
+  endfunction
+  function! OnQuitPre() abort closure
+    if nvim_get_current_win() == self.mem_var.rimecmd_win
+      call self.Stop()
+    endif
+  endfunction
   augroup rimecmd
+    autocmd WinEnter * call OnWinEnter()
     autocmd CursorMoved * call OnCursorMoved()
+    autocmd CursorMovedI * call OnCursorMovedI()
+    autocmd QuitPre * call OnQuitPre()
   augroup END
   startinsert
 endfunction
@@ -120,13 +141,14 @@ function! rimecmd.OnStdout(job_id, data, event) abort dict
 endfunction
 
 function! rimecmd.ReconfigureWindow() abort dict
-  call nvim_set_current_win(self.mem_var.text_win)
+  let current_win = nvim_get_current_win()
+  noautocmd call nvim_set_current_win(self.mem_var.text_win)
   call nvim_win_set_config(self.mem_var.rimecmd_win, {
     \ 'relative': 'cursor',
     \ 'row': 1,
     \ 'col': 0,
   \ })
-  call nvim_set_current_win(self.mem_var.rimecmd_win)
+  noautocmd call nvim_set_current_win(current_win)
 endfunction
 
 function! rimecmd.SetupTerm(oneshot) abort dict
@@ -222,6 +244,7 @@ function! NextCharStartingCol(buf, cursor) abort
 endfunction
 
 function! rimecmd.Stop() abort dict
+  echom "Stop"
   let jobs = [
     \ self.mem_var.rimecmd_job_id,
     \ self.mem_var.stdout_read_job_id,

@@ -171,8 +171,24 @@ function! s:rimecmd_mode.BackspaceWhenNoPendingInput() abort dict
     \ )
   endif
   noautocmd call nvim_set_current_win(current_win)
-  call self.DrawCursorExtmark()
-  call self.ReconfigureWindow()
+endfunction
+
+function! s:rimecmd_mode.EnterWhenNoPendingInput() abort dict
+  let text_cursor = nvim_win_get_cursor(self.members.text_win)
+  let row = text_cursor[0] - 1
+  let col = text_cursor[1]
+  call nvim_buf_set_text(
+    \ nvim_win_get_buf(self.members.text_win),
+    \ row,
+    \ col,
+    \ row,
+    \ col,
+    \ ['', ''],
+  \ )
+  call nvim_win_set_cursor(
+    \ self.members.text_win,
+    \ [text_cursor[0] + 1, text_cursor[1]]
+  \ )
 endfunction
 
 function! s:rimecmd_mode.CommitString(commit_string) abort dict
@@ -220,9 +236,9 @@ function! s:rimecmd_mode.SetupTerm() abort dict
     if exists(
       \ "decoded_json.outcome.effect.update_ui.composition.length"
     \ )
-      let self.no_pending_input = 
+      let self.no_pending_input =
         \ decoded_json.outcome.effect.update_ui.composition.length == 0
-    endif 
+    endif
     if !exists("decoded_json.outcome.effect.commit_string")
       return
     endif
@@ -250,12 +266,15 @@ function! s:rimecmd_mode.SetupTerm() abort dict
     \ && decoded_json.call.params.mask == 0
     \ && self.no_pending_input
       call self.BackspaceWhenNoPendingInput()
+      call self.DrawCursorExtmark()
+      call self.ReconfigureWindow()
     endif
     if decoded_json.call.params.keycode == 65293
     \ && decoded_json.call.params.mask == 0
     \ && self.no_pending_input
-      " TODO
-      echom "enter"
+      call self.EnterWhenNoPendingInput()
+      call self.DrawCursorExtmark()
+      call self.ReconfigureWindow()
     endif
   endfunction
 

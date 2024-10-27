@@ -280,7 +280,7 @@ function! s:rimecmd_mode.SetupTerm() abort dict
     call nvim_set_current_win(self.members.rimecmd_win)
     let self.members.rimecmd_job_id = termopen(
       \ ["sh", "-c", printf(
-        \ "rimecmd --duplicate-requests %s --tty --json -c < %s > %s",
+        \ "exec rimecmd --duplicate-requests '%s' --tty --json -c < '%s' > '%s'",
         \ request_fifo,
         \ stdin_fifo,
         \ stdout_fifo,
@@ -321,7 +321,7 @@ function! s:rimecmd_mode.SetupTerm() abort dict
   endfunction
 
   call jobstart(["sh", "-c", printf(
-      \ "mkfifo %s && mkfifo %s && mkfifo %s",
+      \ "mkfifo '%s' && mkfifo '%s' && exec mkfifo '%s'",
       \ stdout_fifo,
       \ stdin_fifo,
       \ request_fifo,

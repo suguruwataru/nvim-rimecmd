@@ -193,7 +193,20 @@ function! s:rimecmd_mode.Enter() abort dict
 endfunction
 
 function! s:rimecmd_mode.Exit() abort dict
-  throw "not implemented"
+  call nvim_set_current_win(self.members.text_win)
+  if exists('self.members.rimecmd_job_id')
+    call jobstop(self.members.rimecmd_job_id)
+    call jobwait([self.members.rimecmd_job_id])
+  endif
+  let rimecmd_buf = nvim_win_get_buf(self.members.rimecmd_win)
+  call nvim_win_close(self.members.rimecmd_win, v:false)
+  call nvim_buf_delete(rimecmd_buf, #{force: v:true})
+  call nvim_buf_del_extmark(
+    \ nvim_win_get_buf(self.members.text_win),
+    \ s:extmark_ns,
+    \ self.members.cursor_extmark_id,
+  \ )
+  unlet self.members
   let self.active = v:false
 endfunction
 

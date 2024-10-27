@@ -59,7 +59,6 @@ function! s:GetMenuPageSize() abort
     " 2 is rimecmd's exit code for one input being closed while listening
     " for both tty and stdin.
     if a:data != 2
-      echom a:data
       throw printf('rimecmd got problem: %s', error_message)
     endif
   endfunction
@@ -223,7 +222,6 @@ function! s:rimecmd_mode.CommitString(commit_string) abort dict
 endfunction
 
 function! s:rimecmd_mode.CommitRawKeyEventString(raw_key_event) abort dict
-  echom a:raw_key_event
   if exists("a:raw_key_event.accompanying_commit_string")
     if a:raw_key_event.accompanying_commit_string != v:null
       call self.CommitString(a:raw_key_event.accompanying_commit_string)

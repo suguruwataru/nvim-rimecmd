@@ -437,11 +437,13 @@ function! s:rimecmd_mode.Exit() abort dict
   if exists('self.members.rimecmd_buf')
     call nvim_buf_delete(self.members.rimecmd_buf, #{force: v:true})
   endif
-  call nvim_buf_del_extmark(
-    \ nvim_win_get_buf(self.members.text_win),
-    \ s:extmark_ns,
-    \ self.members.cursor_extmark_id,
-  \ )
+  if exists('self.members.cursor_extmark_id')
+    call nvim_buf_del_extmark(
+      \ nvim_win_get_buf(self.members.text_win),
+      \ s:extmark_ns,
+      \ self.members.cursor_extmark_id,
+    \ )
+  endif
   unlet self.members
 endfunction
 

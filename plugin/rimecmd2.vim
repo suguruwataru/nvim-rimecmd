@@ -125,10 +125,9 @@ function! s:rimecmd_mode.BackspaceWhenNoPendingInput() abort dict
   let current_win = nvim_get_current_win()
   noautocmd call nvim_set_current_win(self.members.text_win)
   let text_cursor = nvim_win_get_cursor(self.members.text_win)
-  let row = text_cursor[0] - 1
-  let col = text_cursor[1]
-  if col != 0
+  if text_cursor[1] > 0
     let buf = nvim_win_get_buf(self.members.text_win)
+    let row = text_cursor[0] - 1
     let start_col = s:PrevCharStartingCol(buf, text_cursor)
     call nvim_buf_set_text(
       \ buf,
@@ -138,10 +137,38 @@ function! s:rimecmd_mode.BackspaceWhenNoPendingInput() abort dict
       \ s:NextCharStartingCol(buf, [text_cursor[0], start_col]),
       \ [''],
     \ )
-  else
-    " TODO
+  elseif text_cursor[0] > 1
+    let buf = nvim_win_get_buf(self.members.text_win)
+    let prev_row = text_cursor[0] - 2
+    let cursor_row = text_cursor[0] - 1
+    let cursor_line_text = nvim_buf_get_lines(
+      \ buf,
+      \ cursor_row,
+      \ cursor_row + 1,
+      \ v:true
+    \ )[0]
+    let prev_line_length = strlen(nvim_buf_get_lines(
+      \ buf,
+      \ prev_row,
+      \ prev_row + 1,
+      \ v:true
+    \ )[0])
+    call nvim_buf_set_text(
+      \ buf,
+      \ prev_row,
+      \ prev_line_length,
+      \ cursor_row,
+      \ strlen(cursor_line_text),
+      \ [cursor_line_text],
+    \ )
+    call nvim_win_set_cursor(
+      \ self.members.text_win,
+      \ [text_cursor[0] - 1, prev_line_length]
+    \ )
   endif
   noautocmd call nvim_set_current_win(current_win)
+  call self.DrawCursorExtmark()
+  call self.ReconfigureWindow()
 endfunction
 
 function! s:rimecmd_mode.CommitString(commit_string) abort dict

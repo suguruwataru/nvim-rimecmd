@@ -195,6 +195,17 @@ function! s:rimecmd_mode.Enter() abort dict
   call self.DrawCursorExtmark()
   call self.OpenWindow()
   call self.SetupTerm()
+
+  augroup rimecmd_mode
+    autocmd ModeChanged t:nt call s:rimecmd_mode.OnModeChangedN()
+  augroup END
+endfunction
+
+function! s:rimecmd_mode.OnModeChangedN() abort
+  if nvim_get_current_win() == self.members.rimecmd_win
+    call nvim_set_current_win(self.members.text_win)
+    call self.HideWindow()
+  endif
 endfunction
 
 function! s:rimecmd_mode.ShowWindow() abort dict

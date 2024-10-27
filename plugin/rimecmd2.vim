@@ -252,17 +252,27 @@ function! s:rimecmd_mode.SetupTerm() abort dict
 
   function! OnMkfifoStdoutFifoExit(_job_id, exit_code, _event) abort closure
     call nvim_set_current_win(self.members.rimecmd_win)
-    " TODO handle quit/crash
     let self.members.rimecmd_job_id = termopen(
       \ ["sh", "-c", printf(
-        \ "cat %s | rimecmd --duplicate-requests %s --tty --json -c > %s",
-        \ stdin_fifo,
+        \ "rimecmd --duplicate-requests %s --tty --json -c < %s > %s",
         \ request_fifo,
+        \ stdin_fifo,
         \ stdout_fifo,
       \ )],
+      \ #{ on_exit: {-> self.Exit()} }
     \ )
     if self.members.rimecmd_job_id == -1
       throw "cannot execute rimecmd"
+    endif
+    let self.members.stdin_write_job_id = jobstart(
+      \ ["tee", stdin_fifo],
+      \ #{
+        \ on_stdout: function('OnPipedRimecmdStdout'),
+        \ on_exit: {-> jobstart(["rm", "-f", stdin_fifo])},
+      \ },
+    \ )
+    if self.members.stdin_write_job_id == -1
+      throw "cannot write to rimecmd's input"
     endif
     let self.members.stdout_read_job_id = jobstart(
       \ ["cat", stdout_fifo],
@@ -377,6 +387,18 @@ function! s:rimecmd_mode.Exit() abort dict
   if exists('self.members.rimecmd_job_id')
     call jobstop(self.members.rimecmd_job_id)
     call jobwait([self.members.rimecmd_job_id])
+  endif
+  if exists('self.members.stdin_write_job_id')
+    call jobstop(self.members.stdin_write_job_id)
+    call jobwait([self.members.stdin_write_job_id])
+  endif
+  if exists('self.members.stdout_read_job_id')
+    call jobstop(self.members.stdout_read_job_id)
+    call jobwait([self.members.stdout_read_job_id])
+  endif
+  if exists('self.members.request_read_job_id')
+    call jobstop(self.members.request_read_job_id)
+    call jobwait([self.members.request_read_job_id])
   endif
   if exists('self.members.rimecmd_win')
     call nvim_win_close(self.members.rimecmd_win, v:true)

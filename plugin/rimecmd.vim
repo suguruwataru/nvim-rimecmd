@@ -23,21 +23,12 @@ function! Oneshot(append) abort
     if commit_string ==# ''
       return
     endif
-    let cursor_pos = nvim_win_get_cursor(text_win)
-    call nvim_buf_set_text(
-      \ nvim_win_get_buf(text_win),
-      \ cursor_pos[0] - 1,
-      \ cursor_pos[1],
-      \ cursor_pos[0] - 1,
-      \ cursor_pos[1],
-      \ [commit_string]
-    \ )
-    call nvim_win_set_cursor(
-      \ text_win, [
-        \ cursor_pos[0],
-        \ cursor_pos[1] + strlen(commit_string)
-      \ ],
-    \ )
+    call nvim_set_current_win(text_win)
+    call execute(printf(
+      \ "normal! %s%s",
+      \ a:append ? "a" : "i",
+      \ commit_string,
+    \ ))
   endfunction
   function! OnExit(job_id, data, event) abort closure
     call nvim_win_close(rimecmd_window, v:true)

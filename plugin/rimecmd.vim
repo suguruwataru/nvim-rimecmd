@@ -31,6 +31,18 @@ function! rimecmd.OnWinEnter() abort dict
   endif
 endfunction
 
+function! rimecmd.DetermineAppend(append) abort dict
+  let text_cursor = nvim_win_get_cursor(self.mem_var.text_win)
+  " When line length is 0, of course insert is meaningless.
+  " In this case, append should always be true.
+  let self.mem_var.append = 0 == strlen(nvim_buf_get_lines(
+    \ nvim_win_get_buf(self.mem_var.text_win),
+    \ text_cursor[0] - 1,
+    \ text_cursor[0],
+    \ v:true,
+  \ )[0]) || a:append
+endfunction
+
 function! rimecmd.Enter(oneshot, append) abort dict
   if self.active
     if a:oneshot
@@ -38,7 +50,7 @@ function! rimecmd.Enter(oneshot, append) abort dict
       " the flow go back to the usual oneshot setup
       call self.Stop()
     else
-      let self.mem_var.append = a:append
+      call self.DetermineAppend(a:append)
       call self.DrawCursorExtmark()
       call self.ReconfigureWindow()
       call nvim_set_current_win(self.mem_var.rimecmd_win)
@@ -65,6 +77,8 @@ function! rimecmd.Enter(oneshot, append) abort dict
       \ },
     \ ),
   \ }
+  let text_cursor = nvim_win_get_cursor(self.mem_var.text_win)
+  call self.DetermineAppend(a:append)
   call self.DrawCursorExtmark()
   call self.SetupTerm(a:oneshot)
   call nvim_set_current_win(self.mem_var.rimecmd_win)
@@ -244,7 +258,6 @@ function! NextCharStartingCol(buf, cursor) abort
 endfunction
 
 function! rimecmd.Stop() abort dict
-  echom "Stop"
   let jobs = [
     \ self.mem_var.rimecmd_job_id,
     \ self.mem_var.stdout_read_job_id,

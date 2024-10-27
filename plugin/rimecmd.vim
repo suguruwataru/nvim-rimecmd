@@ -172,7 +172,7 @@ function! s:rimecmd.OnStdout(job_id, data, event) abort dict
   endif
   let text_cursor = nvim_win_get_cursor(self.mem_var.text_win)
   let col = self.mem_var.append
-    \ ? NextCharStartingCol(
+    \ ? s:NextCharStartingCol(
       \ nvim_win_get_buf(self.mem_var.text_win),
       \ text_cursor
     \ ) : text_cursor[1]
@@ -247,7 +247,7 @@ endfunction
 function! s:rimecmd.DrawCursorExtmark() abort dict
   let text_cursor = nvim_win_get_cursor(self.mem_var.text_win)
   let extmark_start_col = self.mem_var.append
-    \ ? NextCharStartingCol(
+    \ ? s:NextCharStartingCol(
       \ nvim_win_get_buf(self.mem_var.text_win),
       \ text_cursor
     \ ) : text_cursor[1]
@@ -262,7 +262,7 @@ function! s:rimecmd.DrawCursorExtmark() abort dict
     \ 'virt_text_pos': 'overlay',
   \ } : {
     \ 'end_row': text_cursor[0] - 1,
-    \ 'end_col': NextCharStartingCol(
+    \ 'end_col': s:NextCharStartingCol(
       \ nvim_win_get_buf(self.mem_var.text_win),
       \ [text_cursor[0], extmark_start_col],
     \ ),
@@ -280,7 +280,7 @@ function! s:rimecmd.DrawCursorExtmark() abort dict
   \)
 endfunction
 
-function! NextCharStartingCol(buf, cursor) abort
+function! s:NextCharStartingCol(buf, cursor) abort
   let line_text = nvim_buf_get_lines(
     \ a:buf,
     \ a:cursor[0] - 1,

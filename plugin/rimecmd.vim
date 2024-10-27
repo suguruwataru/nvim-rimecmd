@@ -1,6 +1,6 @@
 let s:extmark_ns = nvim_create_namespace('rimecmd')
 
-function! NextCol(buf, cursor) abort
+function! NextCharStartingCol(buf, cursor) abort
   let line_text = nvim_buf_get_lines(
     \ a:buf,
     \ a:cursor[0] - 1,
@@ -33,7 +33,7 @@ function! Rimecmd(oneshot, append) abort
   function! DrawCursorExtmark() abort closure
     let text_cursor = nvim_win_get_cursor(text_win)
     let extmark_start_col = a:append
-      \ ? NextCol(nvim_win_get_buf(text_win), text_cursor) 
+      \ ? NextCharStartingCol(nvim_win_get_buf(text_win), text_cursor)
       \ : text_cursor[1]
     let line_text = nvim_buf_get_lines(
       \ nvim_win_get_buf(text_win),
@@ -47,15 +47,13 @@ function! Rimecmd(oneshot, append) abort
       \ text_cursor[0] - 1,
       \ extmark_start_col, extmark_start_col == strlen(line_text) ? {
         \ 'virt_text': [['　', 'CursorIM']],
+        \ 'virt_text_pos': 'overlay',
       \ } : {
         \ 'end_row': text_cursor[0] - 1,
-        \ 'end_col': min([
-          \ NextCol(
-            \ nvim_win_get_buf(text_win),
-            \ [text_cursor[0], extmark_start_col],
-          \ ),
-          \ strlen(line_text) - 1,
-        \ ]),
+        \ 'end_col': NextCharStartingCol(
+          \ nvim_win_get_buf(text_win),
+          \ [text_cursor[0], extmark_start_col],
+        \ ),
         \ 'hl_group': 'CursorIM',
       \ }
     \ )
@@ -78,7 +76,7 @@ function! Rimecmd(oneshot, append) abort
     \ )
     let text_cursor = nvim_win_get_cursor(text_win)
     let col = a:append
-      \ ? NextCol(nvim_win_get_buf(text_win), text_cursor) 
+      \ ? NextCharStartingCol(nvim_win_get_buf(text_win), text_cursor)
       \ : text_cursor[1]
     call nvim_buf_set_text(
       \ nvim_win_get_buf(text_win),
@@ -110,7 +108,10 @@ function! Rimecmd(oneshot, append) abort
   " of rimecmd.
   let fifo_filename = tempname()
   function! OnExit(job_id, data, event) abort closure
-    call nvim_win_close(rimecmd_win, v:true)
+    call nvim_set_current_win(text_win)
+    if nvim_win_is_valid(rimecmd_win)
+      call nvim_win_close(rimecmd_win, v:true)
+    endif
     call nvim_buf_del_extmark(
       \ nvim_win_get_buf(text_win),
       \ s:extmark_ns,
@@ -120,12 +121,11 @@ function! Rimecmd(oneshot, append) abort
       \ ['rm', '-f', fifo_filename],
       \ { 'detach': v:true },
     \ )
-    call nvim_set_current_win(text_win)
   endfunction
   let stdout_read_job_id = jobstart(
     \ printf("mkfifo %s && cat %s", fifo_filename, fifo_filename),
     \ {
-      \ "on_stdout": function('OnStdout') 
+      \ "on_stdout": function('OnStdout')
     \ },
   \ )
   let rimecmd_job_id = termopen(
@@ -136,7 +136,7 @@ function! Rimecmd(oneshot, append) abort
   \ )
   if rimecmd_job_id == -1
     call nvim_win_close(rimecmd_win)
-    echoerr "Cannot execute rimecmd. Is it available through your PATH?" 
+    echoerr "Cannot execute rimecmd. Is it available through your PATH?"
   endif
   startinsert
 endfunction

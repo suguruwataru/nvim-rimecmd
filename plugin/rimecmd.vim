@@ -149,7 +149,15 @@ function! rimecmd.OnStdout(job_id, data, event) abort dict
     \ [commit_string],
   \ )
   let text_cursor[1] += strlen(commit_string)
+  echom [text_cursor, col]
+  echom nvim_buf_get_lines(
+    \ nvim_win_get_buf(self.mem_var.text_win),
+    \ text_cursor[0] - 1,
+    \ text_cursor[0],
+    \ v:true,
+  \ )
   call nvim_win_set_cursor(self.mem_var.text_win, text_cursor)
+  echom nvim_win_get_cursor(self.mem_var.text_win)
   call self.DrawCursorExtmark()
   call self.ReconfigureWindow()
 endfunction

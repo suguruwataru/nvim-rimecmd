@@ -108,6 +108,22 @@ function! s:rimecmd_mode.ReconfigureWindow() abort dict
   noautocmd call nvim_set_current_win(current_win)
 endfunction
 
+function! s:rimecmd_mode.CommitString(commit_string) abort dict
+  let text_cursor = nvim_win_get_cursor(self.members.text_win)
+  let row = text_cursor[0] - 1
+  let col = text_cursor[1]
+  call nvim_buf_set_text(
+    \ nvim_win_get_buf(self.members.text_win),
+    \ row,
+    \ col,
+    \ row,
+    \ col,
+    \ [a:commit_string],
+  \ )
+  let text_cursor[1] += strlen(a:commit_string)
+  call nvim_win_set_cursor(self.members.text_win, text_cursor)
+endfunction
+
 function! s:rimecmd_mode.SetupTerm() abort dict
   " The reason of the fifo redirection used here is neovim's limitation. When
   " the job's process is connected to a terminal, all output are sent
@@ -116,30 +132,18 @@ function! s:rimecmd_mode.SetupTerm() abort dict
   let stdout_fifo = tempname()
   let stdin_fifo = tempname()
 
-  function! s:SetupTermOnStdout(_job_id, data, _event) abort closure
+  function! s:OnPipedRimecmdStdout(_job_id, data, _event) abort closure
     " Neovim triggers on_stdout callback with a list of an empty string
     " when it gets EOF
     if a:data[0] == ''
       return
     endif
     let decoded_json = json_decode(a:data[0])
+    " TODO Respond to things like backspace and enter
     if !exists("decoded_json.outcome.effect.commit_string")
       return
     endif
-    let commit_string = decoded_json.outcome.effect.commit_string
-    let text_cursor = nvim_win_get_cursor(self.members.text_win)
-    let row = text_cursor[0] - 1
-    let col = text_cursor[1]
-    call nvim_buf_set_text(
-      \ nvim_win_get_buf(self.members.text_win),
-      \ row,
-      \ col,
-      \ row,
-      \ col,
-      \ [commit_string],
-    \ )
-    let text_cursor[1] += strlen(commit_string)
-    call nvim_win_set_cursor(self.members.text_win, text_cursor)
+    call self.CommitString(decoded_json.outcome.effect.commit_string)
     call self.DrawCursorExtmark()
     call self.ReconfigureWindow()
   endfunction
@@ -163,7 +167,7 @@ function! s:rimecmd_mode.SetupTerm() abort dict
     let self.members.stdout_read_job_id = jobstart(
       \ ["cat", stdout_fifo],
       \ #{
-        \ on_stdout: function('s:SetupTermOnStdout'),
+        \ on_stdout: function('s:OnPipedRimecmdStdout'),
         \ on_exit: function('s:OnCatExit'),
       \ },
     \ )

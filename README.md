@@ -1,12 +1,12 @@
 ![Recording](vhs/vhs.gif)
 
-`nvim-rimecmd`是通过[rimecmd](https://github.com/suguruwataru/nvim-rimecmd)来在
+`nvim-rimecmd`是通过[rimecmd](https://github.com/suguruwataru/rimecmd)来在
 [Neovim](https://neovim.io/)中使用[librime](https://github.com/rime/librime)的
 Neovim插件。
 
 nvim-rimecmd要在能运行以下命令的环境中才能使用：
 
-- [rimecmd](https://github.com/suguruwataru/nvim-rimecmd)
+- [rimecmd](https://github.com/suguruwataru/rimecmd)
 - cat
 - sh
 - mkfifo

@@ -16,11 +16,11 @@ This plugin adds a "rimecmd mode" to the usage of Neovim.
 This isn't a real mode, like the normal/insert mode we are familiar with.
 It's just a simulate pseudo-mode.
 
-After entering the mode via the |:Rimecmd| command, one can still consider
-them in the normal mode. When they enter the insert mode, however, they
-will see that an input method window is shown. They can then start typing
-in Rime like when using the other frontends of it. Exiting insert mode puts
-one back into the normal mode.
+After entering the mode via the |:Rimecmd| command, one can still consider them
+in the normal mode. When they do something that would normally make them enter
+the insert mode, however, they will see that an input method window is shown.
+They can then start typing in Rime like when using the other frontends of it.
+Pressing <ESC> here puts one back into the normal mode.
 
 ===============================================================================
 COMMANDS *nvim-rimecmd-commands*

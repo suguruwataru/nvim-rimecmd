@@ -3,21 +3,45 @@ nvim-rimecmd *nvim-rimecmd*
 ===============================================================================
 目录
   
+  介绍 |nvim-rimecmd-introduction|
   命令 |nvim-rimecmd-commands|
     Rimecmd |:Rimecmd|
     RimecmdStatus |:RimecmdStatus|
+
+===============================================================================
+介绍 *nvim-rimecmd-introduction*
+
+这个插件是基于中州韻輸入法引擎（Rime, https://rime.im/）制作的。
+
+这个插件需要在可以执行以下命令的环境下才能正常运行：
+
+  1. rimecmd (https://github.com/suguruwataru/rimecmd)
+  2. cat
+  3. tee
+  3. sh
+
+这个插件为Neovim添加了一个『rimecmd模式』。
+
+这个模式并不是『普通模式』、『插入模式』那种『真正』的模式。可以说只是模拟
+的『伪模式』。
+
+用户可以通过|:Rimecmd|进入这个模式。之后，用户依然可以像处于一般的『普通模式』
+时那样使用Neovim。但是，如果用户此时作了某个会启动『插入模式』的动作的话，就会
+发现界面上出现了一个输入法窗口。之后用户的输入就会被Rime处理。这时按<ESC>会让用
+户回到之前的『普通模式』。
 
 ===============================================================================
 命令 *nvim-rimecmd-commands*
 
 Rimecmd *:Rimecmd*
 
-  开关“rimecmd模式”的命令。不处于rimecmd模式时，会开启rimecmd模式。反之则关闭
-  rimecmd模式。
+  开关“rimecmd模式”的命令。
+
+  不处于rimecmd模式时，会开启rimecmd模式。反之则关闭rimecmd模式。
 
 RimecmdStatus *:RimecmdStatus*
 
-  查看是否处于“rimecmd模式”。
+  查看现在是否处于“rimecmd模式”。
 
 ===============================================================================
 协议

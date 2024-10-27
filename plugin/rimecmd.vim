@@ -1,307 +1,9 @@
 let s:extmark_ns = nvim_create_namespace('rimecmd')
-let s:rimecmd = #{ active: v:false }
-let s:rimecmd_mode = #{ active: v:false }
-
-function! s:rimecmd_mode.OnModeChangedI() abort dict
-  call nvim_feedkeys("\<ESC>", 'n', v:true)
-  call s:rimecmd.Enter(v:false, v:false, v:true)
-endfunction
-
-function! s:rimecmd_mode.Toggle() abort dict
-  if !self.active
-    let self.active = v:true
-    function! OnModeChangedI() abort closure
-      call self.OnModeChangedI()
-    endfunction
-    augroup rimecmd_mode
-      autocmd!
-      autocmd ModeChanged *:i call OnModeChangedI()
-    augroup END
-    " If user presses a/A, the cursor is by neovim placed at the append position,
-    " so here append = v:false can be used.
-    call s:rimecmd.Enter(v:false, v:false, v:false)
-    call nvim_set_current_win(s:rimecmd.mem_var.text_win)
-  else
-    if s:rimecmd.active
-      call s:rimecmd.Stop()
-    endif
-    augroup rimecmd_mode
-      autocmd!
-    augroup END
-    let self.active = v:false
-  endif
-endfunction
-
-function! s:rimecmd.OnModeChangedN() abort dict
-  call nvim_set_current_win(self.mem_var.text_win)
-  if exists("self.mem_var.cursor_extmark_id")
-    call nvim_buf_del_extmark(
-      \ nvim_win_get_buf(self.mem_var.text_win),
-      \ s:extmark_ns,
-      \ self.mem_var.cursor_extmark_id,
-    \ )
-  endif
-endfunction
-
-function! s:rimecmd.OnCursorMoved() abort dict
-  let cursor_win = nvim_get_current_win()
-  if cursor_win != self.mem_var.rimecmd_win
-    \ && nvim_win_is_valid(self.mem_var.rimecmd_win)
-    call self.ReconfigureWindow(v:null)
-  endif
-endfunction
-
-function! s:rimecmd.OnCursorMovedI() abort dict
-  call self.OnCursorMoved()
-endfunction
-
-function! s:rimecmd.DetermineAppend(append) abort dict
-  let text_cursor = nvim_win_get_cursor(self.mem_var.text_win)
-  " When cursor is at the end of the line, of course insert is meaningless.
-  " In this case, append should always be true.
-  let self.mem_var.append = text_cursor[1] == strlen(nvim_buf_get_lines(
-    \ nvim_win_get_buf(self.mem_var.text_win),
-    \ text_cursor[0] - 1,
-    \ text_cursor[0],
-    \ v:true,
-  \ )[0])
-  \ || a:append
-endfunction
-
-function! s:rimecmd.Enter(oneshot, append, start_inserting) abort dict
-  if self.active
-    if a:oneshot
-      " If user asks for oneshot, kill the current job and let
-      " the flow go back to the usual oneshot setup
-      call self.Stop()
-    else
-      call self.DetermineAppend(a:append)
-      call self.DrawCursorExtmark()
-      call self.ReconfigureWindow(v:null)
-      call nvim_set_current_win(self.mem_var.rimecmd_win)
-      if a:start_inserting
-        call nvim_feedkeys("i", 'n', v:true)
-      endif
-      return
-    endif
-  endif
-  let self.active = v:true
-  let rimecmd_buf = nvim_create_buf(v:false, v:true)
-  let self.mem_var = #{
-    \ text_win: nvim_get_current_win(),
-    \ append: a:append,
-    \ rimecmd_win: nvim_open_win(
-      \ rimecmd_buf, v:true, {
-        \ 'relative': 'cursor',
-        \ 'row': 1,
-        \ 'col': 2,
-        \ 'height': 1,
-        \ 'width': 40,
-        \ 'focusable': v:true,
-        \ 'border': 'single',
-        \ 'title': 'rimecmd window',
-        \ 'noautocmd': v:true,
-      \ },
-    \ ),
-  \ }
-  let text_cursor = nvim_win_get_cursor(self.mem_var.text_win)
-  call self.DetermineAppend(a:append)
-  if a:start_inserting
-    call self.DrawCursorExtmark()
-  endif
-  call self.SetupTerm(a:oneshot)
-  function! OnCursorMoved() abort closure
-    call self.OnCursorMoved()
-  endfunction
-  function! OnCursorMovedI() abort closure
-    call self.OnCursorMovedI()
-  endfunction
-  function! OnQuitPre() abort closure
-    if nvim_get_current_win() == self.mem_var.rimecmd_win
-      call self.Stop()
-    endif
-  endfunction
-  function! OnModeChangedN() abort closure
-    call self.OnModeChangedN()
-  endfunction
-  augroup rimecmd
-    autocmd CursorMoved * call OnCursorMoved()
-    autocmd CursorMovedI * call OnCursorMovedI()
-    autocmd QuitPre * call OnQuitPre()
-    autocmd ModeChanged t:nt call OnModeChangedN()
-  augroup END
-  if a:start_inserting
-    call nvim_feedkeys("i", 'n', v:true)
-  endif
-endfunction
-
-function! s:rimecmd.OnExit(job_id, data, event) abort dict
-  augroup rimecmd
-    au!
-  augroup END
-  call nvim_set_current_win(self.mem_var.text_win)
-  " User could manually close rimecmd_win, so this check is needed.
-  if nvim_win_is_valid(self.mem_var.rimecmd_win)
-    call nvim_win_close(self.mem_var.rimecmd_win, v:true)
-  endif
-  " When exiting happens when the cursor is not in the rimecmd window,
-  " we do not have the extmark.
-  if exists("self.mem_var.cursor_extmark_id")
-    call nvim_buf_del_extmark(
-      \ nvim_win_get_buf(self.mem_var.text_win),
-      \ s:extmark_ns,
-      \ self.mem_var.cursor_extmark_id,
-    \ )
-  endif
-  unlet self.mem_var
-  let self.active = v:false
-endfunction
-
-function! s:rimecmd.OnStdout(job_id, data, event) abort dict
-  " Neovim triggers on_stdout callback with a list of an empty string
-  " when it gets EOF
-  if a:data[0] == ''
-    return
-  endif
-  let reply = json_decode(a:data[0])
-  if exists('reply.outcome.error')
-    throw reply.outcome.error
-  endif
-  if exists('reply.outcome.effect.commit_string')
-    let commit_string = reply.outcome.effect.commit_string
-    let text_cursor = nvim_win_get_cursor(self.mem_var.text_win)
-    let col = self.mem_var.append
-      \ ? s:NextCharStartingCol(
-        \ nvim_win_get_buf(self.mem_var.text_win),
-        \ text_cursor
-      \ ) : text_cursor[1]
-    call nvim_buf_set_text(
-      \ nvim_win_get_buf(self.mem_var.text_win),
-      \ text_cursor[0] - 1,
-      \ col,
-      \ text_cursor[0] - 1,
-      \ col,
-      \ [commit_string],
-    \ )
-    let text_cursor[1] += strlen(commit_string)
-    call nvim_win_set_cursor(self.mem_var.text_win, text_cursor)
-    call self.DrawCursorExtmark()
-    call self.ReconfigureWindow(1)
-  endif
-  if exists('reply.outcome.effect.update_ui')
-    let height = len(reply.outcome.effect.update_ui.menu.candidates) + 1
-    call self.ReconfigureWindow(height)
-    return
-  endif
-endfunction
-
-function! s:rimecmd.ReconfigureWindow(height) abort dict
-  let current_win = nvim_get_current_win()
-  noautocmd call nvim_set_current_win(self.mem_var.text_win)
-  let win_config = {
-    \ 'relative': 'cursor',
-    \ 'row': 1,
-    \ 'col': 0,
-  \ }
-  call nvim_win_set_config(self.mem_var.rimecmd_win, win_config)
-  call nvim_win_set_config(self.mem_var.rimecmd_win, #{height: a:height})
-  noautocmd call nvim_set_current_win(current_win)
-endfunction
-
-function! s:rimecmd.SetupTerm(oneshot) abort dict
-  let stdin_fifo = tempname()
-  let stdout_fifo = tempname()
-
-  " The reason of the fifo redirection used here is neovim's limitation. When
-  " the job's process is connected to a terminal, all output are sent
-  " to stdout.
-
-  function! OnCatExit(_job_id, _data, _event) abort closure
-    call jobstart(["rm", "-f", stdin_fifo])
-    call jobstart(["rm", "-f", stdout_fifo])
-  endfunction
-
-  function! OnMkfifoStdinFifoExit(_job_id, exit_code, _event) abort closure
-    if a:exit_code != 0
-      throw "The temporary file needed by this plugin cannot be created."
-    endif
-    noautocmd call nvim_set_current_win(self.mem_var.rimecmd_win)
-    let self.mem_var.rimecmd_job_id = termopen(
-      \ ["/bin/sh", "-c", printf(
-        \ "cat %s | rimecmd --json --tty %s > %s",
-        \ stdin_fifo,
-        \ a:oneshot ? "" : "--continue",
-        \ stdout_fifo,
-      \ )],
-      \ {
-        \ 'on_exit': function(self.OnExit, self)
-      \ }
-    \ )
-    if self.mem_var.rimecmd_job_id == -1
-      throw "Cannot execute rimecmd. Is it available from your PATH?"
-      call jobstop(self.mem_var.stdout_read_job_id)
-      self.OnExit()
-      return
-    endif
-    let self.mem_var.stdout_read_job_id = jobstart(
-      \ ["cat", stdout_fifo],
-      \ {
-        \ "on_stdout": function(self.OnStdout, self),
-        \ "on_exit": function('OnCatExit'),
-      \ },
-    \ )
-    call nvim_set_current_win(self.mem_var.text_win)
-  endfunction
-
-  function! OnMkfifoStdoutFifoExit(_job_id, exit_code, _event) abort closure
-    if a:exit_code != 0
-      throw "The temporary file needed by this plugin cannot be created."
-    endif
-    call jobstart(["mkfifo", stdin_fifo], {
-      \ "on_exit": function('OnMkfifoStdinFifoExit'),
-    \ })
-  endfunction
-
-  call jobstart(["mkfifo", stdout_fifo], {
-    \ "on_exit": function('OnMkfifoStdoutFifoExit'),
-  \ })
-endfunction
-
-function! s:rimecmd.DrawCursorExtmark() abort dict
-  let text_cursor = nvim_win_get_cursor(self.mem_var.text_win)
-  let extmark_start_col = self.mem_var.append
-    \ ? s:NextCharStartingCol(
-      \ nvim_win_get_buf(self.mem_var.text_win),
-      \ text_cursor
-    \ ) : text_cursor[1]
-  let line_text = nvim_buf_get_lines(
-    \ nvim_win_get_buf(self.mem_var.text_win),
-    \ text_cursor[0] - 1,
-    \ text_cursor[0],
-    \ v:true,
-  \ )[0]
-  let opts = extmark_start_col == strlen(line_text) ? {
-    \ 'virt_text': [['　', 'CursorIM']],
-    \ 'virt_text_pos': 'overlay',
-  \ } : {
-    \ 'end_row': text_cursor[0] - 1,
-    \ 'end_col': s:NextCharStartingCol(
-      \ nvim_win_get_buf(self.mem_var.text_win),
-      \ [text_cursor[0], extmark_start_col],
-    \ ),
-    \ 'hl_group': 'CursorIM',
-  \ }
-  if exists('self.mem_var.cursor_extmark_id')
-    let opts['id'] = self.mem_var.cursor_extmark_id
-  endif
-  let self.mem_var.cursor_extmark_id = nvim_buf_set_extmark(
-    \ nvim_win_get_buf(self.mem_var.text_win),
-    \ s:extmark_ns,
-    \ text_cursor[0] - 1,
-    \ extmark_start_col,
-    \ opts,
-  \)
-endfunction
+let s:rimecmd_mode = #{
+  \ active: v:false,
+  \ no_pending_input: v:true,
+  \ term_already_setup: v:false,
+\ }
 
 function! s:NextCharStartingCol(buf, cursor) abort
   let line_text = nvim_buf_get_lines(
@@ -316,18 +18,431 @@ function! s:NextCharStartingCol(buf, cursor) abort
   \ )
 endfunction
 
-function! s:rimecmd.Stop() abort dict
-  let jobs = [
-    \ self.mem_var.rimecmd_job_id,
-    \ self.mem_var.stdout_read_job_id,
-  \ ]
-  call jobstop(self.mem_var.rimecmd_job_id)
-  call jobwait(jobs)
+function! s:PrevCharStartingCol(buf, cursor) abort
+  let line_text = nvim_buf_get_lines(
+    \ a:buf,
+    \ a:cursor[0] - 1,
+    \ a:cursor[0],
+    \ v:true,
+  \ )[0]
+  return byteidx(
+    \ line_text,
+    \ charidx(line_text, max([a:cursor[1] - 1, 0])),
+  \ )
 endfunction
 
-command! RimecmdInsert call s:rimecmd.Enter(v:false, v:false, v:true)
-command! RimecmdAppend call s:rimecmd.Enter(v:false, v:true, v:true)
-command! RimecmdOneshot call s:rimecmd.Enter(v:true, v:false, v:true)
-command! RimecmdOneshotAppend call s:rimecmd.Enter(v:true, v:true, v:true)
-command! RimecmdStop call s:rimecmd.Stop()
+function! s:GetMenuPageSize() abort
+  let record = #{ }
+
+  function! s:GetMenuPageSizeOnStdout(job_id, data, _event) abort closure
+    " Neovim triggers on_stdout callback with a list of an empty string
+    " when it gets EOF
+    if a:data[0] ==# ''
+      return
+    endif
+    let reply = json_decode(a:data[0])
+    if exists('reply.outcome')
+      let record.value = reply.outcome.config_value_integer
+    endif
+    if exists('reply.error')
+      echoerr "rimecmd --json returned error"
+      throw reply.error.message
+    endif
+    call jobstop(a:job_id)
+  endfunction
+
+  function! s:RunProcess() abort
+    let get_height_job_id = jobstart(["rimecmd", "--json"], #{
+      \ on_stdout: function('s:GetMenuPageSizeOnStdout'),
+    \ })
+    if get_height_job_id == -1
+      throw "Cannot execute rimecmd. Is it available from your PATH?"
+    endif
+
+    call chansend(get_height_job_id, json_encode(#{
+      \ id: tempname(),
+      \ call: #{
+        \ method: "config_value_integer",
+        \ params: #{ config_id: "default", option_key: "menu/page_size" },
+      \ }
+    \ }))
+    call jobwait([get_height_job_id])
+  endfunction
+
+  call s:RunProcess()
+  return record.value
+endfunction!
+
+function! s:rimecmd_mode.Toggle() abort dict
+  if !self.active
+    call self.Enter()
+  else
+    call self.Exit()
+  endif
+endfunction
+
+function! s:rimecmd_mode.DrawCursorExtmark() abort dict
+  let text_cursor = nvim_win_get_cursor(self.members.text_win)
+  let extmark_start_col = text_cursor[1]
+  let line_text = nvim_buf_get_lines(
+    \ nvim_win_get_buf(self.members.text_win),
+    \ text_cursor[0] - 1,
+    \ text_cursor[0],
+    \ v:true,
+  \ )[0]
+  let opts = extmark_start_col == strlen(line_text) ? {
+    \ 'virt_text': [['　', 'CursorIM']],
+    \ 'virt_text_pos': 'overlay',
+  \ } : {
+    \ 'end_row': text_cursor[0] - 1,
+    \ 'end_col': s:NextCharStartingCol(
+      \ nvim_win_get_buf(self.members.text_win),
+      \ [text_cursor[0], extmark_start_col],
+    \ ),
+    \ 'hl_group': 'CursorIM',
+  \ }
+  if exists('self.members.cursor_extmark_id')
+    let opts['id'] = self.members.cursor_extmark_id
+  endif
+  let self.members.cursor_extmark_id = nvim_buf_set_extmark(
+    \ nvim_win_get_buf(self.members.text_win),
+    \ s:extmark_ns,
+    \ text_cursor[0] - 1,
+    \ extmark_start_col,
+    \ opts,
+  \ )
+endfunction
+
+function! s:rimecmd_mode.ReconfigureWindow() abort dict
+  let current_win = nvim_get_current_win()
+  noautocmd call nvim_set_current_win(self.members.text_win)
+  let win_config = {
+    \ 'relative': 'cursor',
+    \ 'row': 1,
+    \ 'col': 0,
+  \ }
+  call nvim_win_set_config(self.members.rimecmd_win, win_config)
+  noautocmd call nvim_set_current_win(current_win)
+endfunction
+
+function! s:rimecmd_mode.BackspaceWhenNoPendingInput() abort dict
+  let current_win = nvim_get_current_win()
+  noautocmd call nvim_set_current_win(self.members.text_win)
+  let text_cursor = nvim_win_get_cursor(self.members.text_win)
+  if text_cursor[1] > 0
+    let buf = nvim_win_get_buf(self.members.text_win)
+    let row = text_cursor[0] - 1
+    let start_col = s:PrevCharStartingCol(buf, text_cursor)
+    call nvim_buf_set_text(
+      \ buf,
+      \ row,
+      \ start_col,
+      \ row,
+      \ s:NextCharStartingCol(buf, [text_cursor[0], start_col]),
+      \ [''],
+    \ )
+  elseif text_cursor[0] > 1
+    let buf = nvim_win_get_buf(self.members.text_win)
+    let prev_row = text_cursor[0] - 2
+    let cursor_row = text_cursor[0] - 1
+    let cursor_line_text = nvim_buf_get_lines(
+      \ buf,
+      \ cursor_row,
+      \ cursor_row + 1,
+      \ v:true
+    \ )[0]
+    let prev_line_length = strlen(nvim_buf_get_lines(
+      \ buf,
+      \ prev_row,
+      \ prev_row + 1,
+      \ v:true
+    \ )[0])
+    call nvim_buf_set_text(
+      \ buf,
+      \ prev_row,
+      \ prev_line_length,
+      \ cursor_row,
+      \ strlen(cursor_line_text),
+      \ [cursor_line_text],
+    \ )
+    call nvim_win_set_cursor(
+      \ self.members.text_win,
+      \ [text_cursor[0] - 1, prev_line_length]
+    \ )
+  endif
+  noautocmd call nvim_set_current_win(current_win)
+endfunction
+
+function! s:rimecmd_mode.EnterWhenNoPendingInput() abort dict
+  let text_cursor = nvim_win_get_cursor(self.members.text_win)
+  let row = text_cursor[0] - 1
+  let col = text_cursor[1]
+  call nvim_buf_set_text(
+    \ nvim_win_get_buf(self.members.text_win),
+    \ row,
+    \ col,
+    \ row,
+    \ col,
+    \ ['', ''],
+  \ )
+  call nvim_win_set_cursor(
+    \ self.members.text_win,
+    \ [text_cursor[0] + 1, text_cursor[1]]
+  \ )
+endfunction
+
+function! s:rimecmd_mode.CommitString(commit_string) abort dict
+  let text_cursor = nvim_win_get_cursor(self.members.text_win)
+  let row = text_cursor[0] - 1
+  let col = text_cursor[1]
+  call nvim_buf_set_text(
+    \ nvim_win_get_buf(self.members.text_win),
+    \ row,
+    \ col,
+    \ row,
+    \ col,
+    \ [a:commit_string],
+  \ )
+  let text_cursor[1] += strlen(a:commit_string)
+  call nvim_win_set_cursor(self.members.text_win, text_cursor)
+  let self.no_pending_input = v:true
+endfunction
+
+function! s:rimecmd_mode.SetupTerm() abort dict
+  if self.term_already_setup
+    return
+  endif
+
+  let self.term_already_setup = v:true
+  " The reason of the fifo redirection used here is neovim's limitation. When
+  " the job's process is connected to a terminal, all output are sent
+  " to stdout. As a result, redirection is used to separate actual stdout
+  " from terminal control output.
+  let stdout_fifo = tempname()
+  let stdin_fifo = tempname()
+  " The key event is directly passed to the terminal window. In order to
+  " get what the key event is, and handle properly Enter and Backspace events
+  " that happen when there isn't pending input for Rime, we check the requests
+  " also
+  let request_fifo = tempname()
+
+  function! OnPipedRimecmdStdout(_job_id, data, _event) abort closure
+    " Neovim triggers on_stdout callback with a list of an empty string
+    " when it gets EOF
+    if a:data[0] ==# ''
+      return
+    endif
+    let decoded_json = json_decode(a:data[0])
+    if exists(
+      \ "decoded_json.outcome.effect.update_ui.composition.length"
+    \ )
+      let self.no_pending_input =
+        \ decoded_json.outcome.effect.update_ui.composition.length == 0
+    endif
+    if !exists("decoded_json.outcome.effect.commit_string")
+      return
+    endif
+    call self.CommitString(decoded_json.outcome.effect.commit_string)
+    call self.DrawCursorExtmark()
+    call self.ReconfigureWindow()
+  endfunction
+
+  function! OnPipedRequestStdout(_job_id, data, _event) abort closure
+    " Neovim triggers on_stdout callback with a list of an empty string
+    " when it gets EOF
+    if a:data[0] ==# ''
+      return
+    endif
+    let decoded_json = json_decode(a:data[0])
+    if !exists("decoded_json.call.method")
+    \ || decoded_json.call.method !=# "process_key"
+      return
+    endif
+    if !exists("decoded_json.call.params.mask")
+    \ || !exists("decoded_json.call.params.keycode")
+      throw "Unexpected JSON format"
+    endif
+    if decoded_json.call.params.keycode == 65288
+    \ && decoded_json.call.params.mask == 0
+    \ && self.no_pending_input
+      call self.BackspaceWhenNoPendingInput()
+      call self.DrawCursorExtmark()
+      call self.ReconfigureWindow()
+    endif
+    if decoded_json.call.params.keycode == 65293
+    \ && decoded_json.call.params.mask == 0
+    \ && self.no_pending_input
+      call self.EnterWhenNoPendingInput()
+      call self.DrawCursorExtmark()
+      call self.ReconfigureWindow()
+    endif
+  endfunction
+
+  function! OnMkfifoStdoutFifoExit(_job_id, exit_code, _event) abort closure
+    call nvim_set_current_win(self.members.rimecmd_win)
+    let self.members.rimecmd_job_id = termopen(
+      \ ["sh", "-c", printf(
+        \ "rimecmd --duplicate-requests %s --tty --json -c < %s > %s",
+        \ request_fifo,
+        \ stdin_fifo,
+        \ stdout_fifo,
+      \ )],
+      \ #{ on_exit: {-> self.Exit()} }
+    \ )
+    if self.members.rimecmd_job_id == -1
+      throw "cannot execute rimecmd"
+    endif
+    let self.members.stdin_write_job_id = jobstart(
+      \ ["tee", stdin_fifo],
+      \ #{
+        \ on_stdout: function('OnPipedRimecmdStdout'),
+        \ on_exit: {-> jobstart(["rm", "-f", stdin_fifo])},
+      \ },
+    \ )
+    if self.members.stdin_write_job_id == -1
+      throw "cannot write to rimecmd's input"
+    endif
+    let self.members.stdout_read_job_id = jobstart(
+      \ ["cat", stdout_fifo],
+      \ #{
+        \ on_stdout: function('OnPipedRimecmdStdout'),
+        \ on_exit: {-> jobstart(["rm", "-f", stdout_fifo])},
+      \ },
+    \ )
+    if self.members.stdout_read_job_id == -1
+      throw "cannot read rimecmd's output"
+    endif
+    let self.members.request_read_job_id = jobstart(
+      \ ["cat", request_fifo],
+      \ #{
+        \ on_stdout: function('OnPipedRequestStdout'),
+        \ on_exit: {-> jobstart(["rm", "-f", request_fifo])},
+      \ },
+    \ )
+    startinsert
+  endfunction
+
+  call jobstart(["sh", "-c", printf(
+      \ "mkfifo %s && mkfifo %s && mkfifo %s",
+      \ stdout_fifo,
+      \ stdin_fifo,
+      \ request_fifo,
+    \ )], {
+    \ "on_exit": function('OnMkfifoStdoutFifoExit'),
+  \ })
+endfunction
+
+function! s:rimecmd_mode.OpenWindow() abort dict
+  let self.members.rimecmd_win = nvim_open_win(
+    \ self.members.rimecmd_buf, v:true, {
+      \ 'relative': 'cursor',
+      \ 'row': 1,
+      \ 'col': 2,
+      \ 'height': s:GetMenuPageSize() + 1,
+      \ 'width': 40,
+      \ 'focusable': v:true,
+      \ 'border': 'single',
+      \ 'title': 'rimecmd window',
+      \ 'noautocmd': v:true,
+    \ },
+  \ )
+endfunction
+
+function! s:rimecmd_mode.Enter() abort dict
+  let self.active = v:true
+  let rimecmd_buf = nvim_create_buf(v:false, v:true)
+  let self.members = #{
+    \ text_win: nvim_get_current_win(),
+    \ rimecmd_buf: rimecmd_buf,
+  \ }
+
+  augroup rimecmd_mode
+    autocmd ModeChanged t:nt call s:rimecmd_mode.OnModeChangedN()
+    autocmd ModeChanged *:i call s:rimecmd_mode.OnModeChangedI()
+    autocmd QuitPre * call s:rimecmd_mode.OnQuitPre()
+  augroup END
+endfunction
+
+function! s:rimecmd_mode.OnModeChangedI() abort dict
+  if nvim_get_current_win() == self.members.text_win
+    call self.ShowWindow()
+  endif
+endfunction
+
+function! s:rimecmd_mode.OnQuitPre() abort dict
+  if exists('self.members.rimecmd_win') &&
+  \ nvim_get_current_win() == self.members.rimecmd_win
+    call self.Exit()
+  endif
+endfunction
+
+function! s:rimecmd_mode.OnModeChangedN() abort dict
+  if nvim_get_current_win() == self.members.rimecmd_win
+    call nvim_set_current_win(self.members.text_win)
+    call self.HideWindow()
+  endif
+endfunction
+
+function! s:rimecmd_mode.ShowWindow() abort dict
+  if exists('self.members.rimecmd_win') || !exists('self.members.rimecmd_buf')
+    return
+  endif
+  call self.OpenWindow()
+  call self.SetupTerm()
+  call self.ReconfigureWindow()
+  call self.DrawCursorExtmark()
+endfunction
+
+function! s:rimecmd_mode.HideWindow() abort dict
+  if exists('self.members.rimecmd_win')
+    call nvim_win_hide(self.members.rimecmd_win)
+    unlet self.members.rimecmd_win
+  endif
+  call nvim_buf_del_extmark(
+    \ nvim_win_get_buf(self.members.text_win),
+    \ s:extmark_ns,
+    \ self.members.cursor_extmark_id,
+  \ )
+endfunction
+
+function! s:rimecmd_mode.Exit() abort dict
+  if !self.active
+    return
+  endif
+  let self.active = v:false
+  augroup rimecmd_mode
+    autocmd!
+  augroup END
+  call nvim_set_current_win(self.members.text_win)
+  if exists('self.members.rimecmd_job_id')
+    call jobstop(self.members.rimecmd_job_id)
+    call jobwait([self.members.rimecmd_job_id])
+  endif
+  if exists('self.members.stdin_write_job_id')
+    call jobstop(self.members.stdin_write_job_id)
+    call jobwait([self.members.stdin_write_job_id])
+  endif
+  if exists('self.members.stdout_read_job_id')
+    call jobstop(self.members.stdout_read_job_id)
+    call jobwait([self.members.stdout_read_job_id])
+  endif
+  if exists('self.members.request_read_job_id')
+    call jobstop(self.members.request_read_job_id)
+    call jobwait([self.members.request_read_job_id])
+  endif
+  let self.term_already_setup = v:false
+  if exists('self.members.rimecmd_win')
+    call nvim_win_close(self.members.rimecmd_win, v:true)
+  endif
+  if exists('self.members.rimecmd_buf')
+    call nvim_buf_delete(self.members.rimecmd_buf, #{force: v:true})
+  endif
+  call nvim_buf_del_extmark(
+    \ nvim_win_get_buf(self.members.text_win),
+    \ s:extmark_ns,
+    \ self.members.cursor_extmark_id,
+  \ )
+  unlet self.members
+endfunction
+
 command! Rimecmd call s:rimecmd_mode.Toggle()

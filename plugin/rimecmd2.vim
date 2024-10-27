@@ -169,34 +169,7 @@ function! s:rimecmd_mode.SetupTerm() abort dict
   \ })
 endfunction
 
-function! s:rimecmd_mode.Enter() abort dict
-  let self.active = v:true
-  let rimecmd_buf = nvim_create_buf(v:false, v:true)
-  let self.members = #{
-    \ text_win: nvim_get_current_win(),
-    \ rimecmd_buf: rimecmd_buf,
-    \ rimecmd_win: nvim_open_win(
-      \ rimecmd_buf, v:true, {
-        \ 'relative': 'cursor',
-        \ 'row': 1,
-        \ 'col': 2,
-        \ 'height': s:GetMenuPageSize() + 1,
-        \ 'width': 40,
-        \ 'focusable': v:true,
-        \ 'border': 'single',
-        \ 'title': 'rimecmd window',
-        \ 'noautocmd': v:true,
-      \ },
-    \ ),
-  \ }
-  call self.DrawCursorExtmark()
-  call self.SetupTerm()
-endfunction
-
-function! s:rimecmd_mode.ShowWindow() abort dict
-  if exists('self.members.rimecmd_win') || !exists('self.members.rimecmd_buf')
-    return
-  endif
+function! s:rimecmd_mode.OpenWindow() abort dict
   let self.members.rimecmd_win = nvim_open_win(
     \ self.members.rimecmd_buf, v:true, {
       \ 'relative': 'cursor',
@@ -210,6 +183,25 @@ function! s:rimecmd_mode.ShowWindow() abort dict
       \ 'noautocmd': v:true,
     \ },
   \ )
+endfunction
+
+function! s:rimecmd_mode.Enter() abort dict
+  let self.active = v:true
+  let rimecmd_buf = nvim_create_buf(v:false, v:true)
+  let self.members = #{
+    \ text_win: nvim_get_current_win(),
+    \ rimecmd_buf: rimecmd_buf,
+  \ }
+  call self.DrawCursorExtmark()
+  call self.OpenWindow()
+  call self.SetupTerm()
+endfunction
+
+function! s:rimecmd_mode.ShowWindow() abort dict
+  if exists('self.members.rimecmd_win') || !exists('self.members.rimecmd_buf')
+    return
+  endif
+  call self.OpenWindow()
 endfunction
 
 function! s:rimecmd_mode.HideWindow() abort dict

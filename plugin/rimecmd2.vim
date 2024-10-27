@@ -14,6 +14,19 @@ function! s:NextCharStartingCol(buf, cursor) abort
   \ )
 endfunction
 
+function! s:PrevCharStartingCol(buf, cursor) abort
+  let line_text = nvim_buf_get_lines(
+    \ a:buf,
+    \ a:cursor[0] - 1,
+    \ a:cursor[0],
+    \ v:true,
+  \ )[0]
+  return byteidx(
+    \ line_text,
+    \ charidx(line_text, max([a:cursor[1] - 1, 0])),
+  \ )
+endfunction
+
 function! s:GetMenuPageSize() abort
   let record = #{ }
 
@@ -111,8 +124,23 @@ endfunction
 function! s:rimecmd_mode.BackspaceWhenNoPendingInput() abort dict
   let current_win = nvim_get_current_win()
   noautocmd call nvim_set_current_win(self.members.text_win)
-  " TODO
-  exe "normal! i\<BS>\<ESC>"
+  let text_cursor = nvim_win_get_cursor(self.members.text_win)
+  let row = text_cursor[0] - 1
+  let col = text_cursor[1]
+  if col != 0
+    let buf = nvim_win_get_buf(self.members.text_win)
+    let start_col = s:PrevCharStartingCol(buf, text_cursor)
+    call nvim_buf_set_text(
+      \ buf,
+      \ row,
+      \ start_col,
+      \ row,
+      \ s:NextCharStartingCol(buf, [text_cursor[0], start_col]),
+      \ [''],
+    \ )
+  else
+    " TODO
+  endif
   noautocmd call nvim_set_current_win(current_win)
 endfunction
 
@@ -130,6 +158,7 @@ function! s:rimecmd_mode.CommitString(commit_string) abort dict
   \ )
   let text_cursor[1] += strlen(a:commit_string)
   call nvim_win_set_cursor(self.members.text_win, text_cursor)
+  let self.no_pending_input = v:true
 endfunction
 
 function! s:rimecmd_mode.SetupTerm() abort dict
@@ -196,6 +225,7 @@ function! s:rimecmd_mode.SetupTerm() abort dict
 
   function! OnMkfifoStdoutFifoExit(_job_id, exit_code, _event) abort closure
     call nvim_set_current_win(self.members.rimecmd_win)
+    " TODO handle quit/crash
     let self.members.rimecmd_job_id = termopen(
       \ ["sh", "-c", printf(
         \ "cat %s | rimecmd --duplicate-requests %s --tty --json -c > %s",

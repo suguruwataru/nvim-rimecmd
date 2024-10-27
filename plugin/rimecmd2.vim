@@ -145,7 +145,7 @@ function! s:rimecmd_mode.SetupTerm() abort dict
   " also
   let request_fifo = tempname()
 
-  function! s:OnPipedRimecmdStdout(_job_id, data, _event) abort closure
+  function! OnPipedRimecmdStdout(_job_id, data, _event) abort closure
     " Neovim triggers on_stdout callback with a list of an empty string
     " when it gets EOF
     if a:data[0] ==# ''
@@ -166,7 +166,7 @@ function! s:rimecmd_mode.SetupTerm() abort dict
     call self.ReconfigureWindow()
   endfunction
 
-  function! s:OnPipedRequestStdout(_job_id, data, _event) abort closure
+  function! OnPipedRequestStdout(_job_id, data, _event) abort closure
     " Neovim triggers on_stdout callback with a list of an empty string
     " when it gets EOF
     if a:data[0] ==# ''
@@ -194,7 +194,7 @@ function! s:rimecmd_mode.SetupTerm() abort dict
     endif
   endfunction
 
-  function! s:OnMkfifoStdoutFifoExit(_job_id, exit_code, _event) abort closure
+  function! OnMkfifoStdoutFifoExit(_job_id, exit_code, _event) abort closure
     call nvim_set_current_win(self.members.rimecmd_win)
     let self.members.rimecmd_job_id = termopen(
       \ ["sh", "-c", printf(
@@ -210,7 +210,7 @@ function! s:rimecmd_mode.SetupTerm() abort dict
     let self.members.stdout_read_job_id = jobstart(
       \ ["cat", stdout_fifo],
       \ #{
-        \ on_stdout: function('s:OnPipedRimecmdStdout'),
+        \ on_stdout: function('OnPipedRimecmdStdout'),
         \ on_exit: {-> jobstart(["rm", "-f", stdout_fifo])},
       \ },
     \ )
@@ -220,7 +220,7 @@ function! s:rimecmd_mode.SetupTerm() abort dict
     let self.members.request_read_job_id = jobstart(
       \ ["cat", request_fifo],
       \ #{
-        \ on_stdout: function('s:OnPipedRequestStdout'),
+        \ on_stdout: function('OnPipedRequestStdout'),
         \ on_exit: {-> jobstart(["rm", "-f", request_fifo])},
       \ },
     \ )
@@ -233,7 +233,7 @@ function! s:rimecmd_mode.SetupTerm() abort dict
       \ stdin_fifo,
       \ request_fifo,
     \ )], {
-    \ "on_exit": function('s:OnMkfifoStdoutFifoExit'),
+    \ "on_exit": function('OnMkfifoStdoutFifoExit'),
   \ })
 endfunction
 

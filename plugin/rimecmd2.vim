@@ -161,7 +161,7 @@ function! s:rimecmd_mode.SetupTerm() abort dict
     if self.members.stdout_read_job_id == -1
       throw "cannot read rimecmd's output"
     endif
-    call nvim_set_current_win(self.members.text_win)
+    startinsert
   endfunction
 
   call jobstart(["mkfifo", stdout_fifo], {

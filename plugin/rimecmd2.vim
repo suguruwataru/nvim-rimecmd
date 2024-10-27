@@ -1,5 +1,9 @@
 let s:extmark_ns = nvim_create_namespace('rimecmd')
-let s:rimecmd_mode = #{ active: v:false, no_pending_input: v:true }
+let s:rimecmd_mode = #{
+  \ active: v:false,
+  \ no_pending_input: v:true,
+  \ term_already_setup: v:false,
+\ }
 
 function! s:NextCharStartingCol(buf, cursor) abort
   let line_text = nvim_buf_get_lines(
@@ -189,6 +193,11 @@ function! s:rimecmd_mode.CommitString(commit_string) abort dict
 endfunction
 
 function! s:rimecmd_mode.SetupTerm() abort dict
+  if self.term_already_setup
+    return
+  endif
+
+  let self.term_already_setup = v:true
   " The reason of the fifo redirection used here is neovim's limitation. When
   " the job's process is connected to a terminal, all output are sent
   " to stdout. As a result, redirection is used to separate actual stdout
@@ -327,9 +336,6 @@ function! s:rimecmd_mode.Enter() abort dict
     \ text_win: nvim_get_current_win(),
     \ rimecmd_buf: rimecmd_buf,
   \ }
-  call self.DrawCursorExtmark()
-  call self.OpenWindow()
-  call self.SetupTerm()
 
   augroup rimecmd_mode
     autocmd ModeChanged t:nt call s:rimecmd_mode.OnModeChangedN()
@@ -363,6 +369,7 @@ function! s:rimecmd_mode.ShowWindow() abort dict
     return
   endif
   call self.OpenWindow()
+  call self.SetupTerm()
   call self.ReconfigureWindow()
   call self.DrawCursorExtmark()
 endfunction
@@ -380,6 +387,10 @@ function! s:rimecmd_mode.HideWindow() abort dict
 endfunction
 
 function! s:rimecmd_mode.Exit() abort dict
+  if !self.active
+    return
+  endif
+  let self.active = v:false
   augroup rimecmd_mode
     autocmd!
   augroup END
@@ -400,17 +411,19 @@ function! s:rimecmd_mode.Exit() abort dict
     call jobstop(self.members.request_read_job_id)
     call jobwait([self.members.request_read_job_id])
   endif
+  let self.term_already_setup = v:false
   if exists('self.members.rimecmd_win')
     call nvim_win_close(self.members.rimecmd_win, v:true)
   endif
-  call nvim_buf_delete(self.members.rimecmd_buf, #{force: v:true})
+  if exists('self.members.rimecmd_buf')
+    call nvim_buf_delete(self.members.rimecmd_buf, #{force: v:true})
+  endif
   call nvim_buf_del_extmark(
     \ nvim_win_get_buf(self.members.text_win),
     \ s:extmark_ns,
     \ self.members.cursor_extmark_id,
   \ )
   unlet self.members
-  let self.active = v:false
 endfunction
 
 command! Rimecmd call s:rimecmd_mode.Toggle()

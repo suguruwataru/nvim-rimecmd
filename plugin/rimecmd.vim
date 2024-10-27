@@ -447,4 +447,13 @@ function! s:rimecmd_mode.Exit() abort dict
   unlet self.members
 endfunction
 
+function! s:rimecmd_mode.ShowStatus() dict abort
+  if self.active
+    echo "rimecmd mode is on"
+  else
+    echo "rimecmd mode is off"
+  endif
+endfunction
+
 command! Rimecmd call s:rimecmd_mode.Toggle()
+command! RimecmdStatus call s:rimecmd_mode.ShowStatus()

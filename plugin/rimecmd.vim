@@ -4,9 +4,7 @@ let s:rimecmd_mode = #{ active: v:false }
 
 function! s:rimecmd_mode.OnModeChangedI() abort dict
   call nvim_feedkeys("\<ESC>", 'n', v:true)
-  " If user presses a/A, the cursor is by neovim placed at the append position,
-  " so here append = v:false can be used.
-  call s:rimecmd.Enter(v:false, v:false)
+  call s:rimecmd.Enter(v:false, v:false, v:true)
 endfunction
 
 function! s:rimecmd_mode.Toggle() abort dict
@@ -19,9 +17,13 @@ function! s:rimecmd_mode.Toggle() abort dict
       autocmd!
       autocmd ModeChanged *:i call OnModeChangedI()
     augroup END
+    " If user presses a/A, the cursor is by neovim placed at the append position,
+    " so here append = v:false can be used.
+    call s:rimecmd.Enter(v:false, v:false, v:false)
+    call nvim_set_current_win(s:rimecmd.mem_var.text_win)
   else
-    if rimecmd.active
-      call rimecmd.Stop()
+    if s:rimecmd.active
+      call s:rimecmd.Stop()
     endif
     augroup rimecmd_mode
       autocmd!
@@ -31,10 +33,13 @@ function! s:rimecmd_mode.Toggle() abort dict
 endfunction
 
 function! s:rimecmd.OnModeChangedN() abort dict
-  if self.active
-    if nvim_get_current_win() == self.mem_var.rimecmd_win
-      call self.Stop()
-    endif
+  call nvim_set_current_win(self.mem_var.text_win)
+  if exists("self.mem_var.cursor_extmark_id")
+    call nvim_buf_del_extmark(
+      \ nvim_win_get_buf(self.mem_var.text_win),
+      \ s:extmark_ns,
+      \ self.mem_var.cursor_extmark_id,
+    \ )
   endif
 endfunction
 
@@ -50,24 +55,6 @@ function! s:rimecmd.OnCursorMovedI() abort dict
   call self.OnCursorMoved()
 endfunction
 
-function! s:rimecmd.OnWinEnter() abort dict
-  let cursor_win = nvim_get_current_win()
-  if cursor_win != self.mem_var.rimecmd_win
-    " Only when the cursor is in the rimecmd window, we need to ourselves
-    " draw a cursor for the text window.
-    if exists("self.mem_var.cursor_extmark_id")
-      call nvim_buf_del_extmark(
-        \ nvim_win_get_buf(self.mem_var.text_win),
-        \ s:extmark_ns,
-        \ self.mem_var.cursor_extmark_id,
-      \ )
-      unlet self.mem_var.cursor_extmark_id
-    endif
-  else
-    call self.DrawCursorExtmark()
-  endif
-endfunction
-
 function! s:rimecmd.DetermineAppend(append) abort dict
   let text_cursor = nvim_win_get_cursor(self.mem_var.text_win)
   " When cursor is at the end of the line, of course insert is meaningless.
@@ -81,7 +68,7 @@ function! s:rimecmd.DetermineAppend(append) abort dict
   \ || a:append
 endfunction
 
-function! s:rimecmd.Enter(oneshot, append) abort dict
+function! s:rimecmd.Enter(oneshot, append, start_inserting) abort dict
   if self.active
     if a:oneshot
       " If user asks for oneshot, kill the current job and let
@@ -92,7 +79,9 @@ function! s:rimecmd.Enter(oneshot, append) abort dict
       call self.DrawCursorExtmark()
       call self.ReconfigureWindow()
       call nvim_set_current_win(self.mem_var.rimecmd_win)
-      call nvim_feedkeys("i", 'n', v:true)
+      if a:start_inserting
+        call nvim_feedkeys("i", 'n', v:true)
+      endif
       return
     endif
   endif
@@ -105,7 +94,7 @@ function! s:rimecmd.Enter(oneshot, append) abort dict
       \ rimecmd_buf, v:true, {
         \ 'relative': 'cursor',
         \ 'row': 1,
-        \ 'col': 0,
+        \ 'col': 2,
         \ 'height': 10,
         \ 'width': 40,
         \ 'focusable': v:true,
@@ -117,7 +106,9 @@ function! s:rimecmd.Enter(oneshot, append) abort dict
   \ }
   let text_cursor = nvim_win_get_cursor(self.mem_var.text_win)
   call self.DetermineAppend(a:append)
-  call self.DrawCursorExtmark()
+  if a:start_inserting
+    call self.DrawCursorExtmark()
+  endif
   call self.SetupTerm(a:oneshot)
   call nvim_set_current_win(self.mem_var.rimecmd_win)
   function! OnCursorMoved() abort closure
@@ -125,9 +116,6 @@ function! s:rimecmd.Enter(oneshot, append) abort dict
   endfunction
   function! OnCursorMovedI() abort closure
     call self.OnCursorMovedI()
-  endfunction
-  function! OnWinEnter() abort closure
-    call self.OnWinEnter()
   endfunction
   function! OnQuitPre() abort closure
     if nvim_get_current_win() == self.mem_var.rimecmd_win
@@ -138,13 +126,14 @@ function! s:rimecmd.Enter(oneshot, append) abort dict
     call self.OnModeChangedN()
   endfunction
   augroup rimecmd
-    autocmd WinEnter * call OnWinEnter()
     autocmd CursorMoved * call OnCursorMoved()
     autocmd CursorMovedI * call OnCursorMovedI()
     autocmd QuitPre * call OnQuitPre()
     autocmd ModeChanged t:nt call OnModeChangedN()
   augroup END
-  call nvim_feedkeys("i", 'n', v:true)
+  if a:start_inserting
+    call nvim_feedkeys("i", 'n', v:true)
+  endif
 endfunction
 
 function! s:rimecmd.OnExit(job_id, data, event) abort dict
@@ -308,9 +297,9 @@ function! s:rimecmd.Stop() abort dict
   call jobwait(jobs)
 endfunction
 
-command! RimecmdInsert call s:rimecmd.Enter(v:false, v:false)
-command! RimecmdAppend call s:rimecmd.Enter(v:false, v:true)
-command! RimecmdOneshot call s:rimecmd.Enter(v:true, v:false)
-command! RimecmdOneshotAppend call s:rimecmd.Enter(v:true, v:true)
+command! RimecmdInsert call s:rimecmd.Enter(v:false, v:false, v:true)
+command! RimecmdAppend call s:rimecmd.Enter(v:false, v:true, v:true)
+command! RimecmdOneshot call s:rimecmd.Enter(v:true, v:false, v:true)
+command! RimecmdOneshotAppend call s:rimecmd.Enter(v:true, v:true, v:true)
 command! RimecmdStop call s:rimecmd.Stop()
 command! Rimecmd call s:rimecmd_mode.Toggle()

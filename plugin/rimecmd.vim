@@ -49,9 +49,14 @@ function! s:GetMenuPageSize() abort
     call jobstop(a:job_id)
   endfunction
 
+  function! ThrowOnStderr(job_id, data, _event) abort closure
+    throw printf("rimecmd got problem: %s", a:data[0])
+  endfunction
+
   function! RunProcess() abort
     let get_height_job_id = jobstart(["rimecmd", "--json"], #{
       \ on_stdout: function('GetMenuPageSizeOnStdout'),
+      \ on_stderr: function('ThrowOnStderr'),
     \ })
     if get_height_job_id == -1
       throw "Cannot execute rimecmd. Is it available from your PATH?"

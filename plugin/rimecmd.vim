@@ -412,7 +412,6 @@ function! s:rimecmd_mode.HideWindow() abort dict
     \ self.members.cursor_extmark_id,
   \ )
   if exists('self.members.stdin_write_job_id')
-    echom "writing"
     call chansend(self.members.stdin_write_job_id, json_encode(#{
       \ id: tempname(),
       \ call: #{

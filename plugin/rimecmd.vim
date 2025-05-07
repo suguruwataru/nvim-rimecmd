@@ -201,7 +201,7 @@ function! s:rimecmd_mode.EnterWhenNoPendingInput() abort dict
   \ )
   call nvim_win_set_cursor(
     \ self.members.text_win,
-    \ [text_cursor[0] + 1, text_cursor[1]]
+    \ [text_cursor[0] + 1, 0]
   \ )
 endfunction
 
